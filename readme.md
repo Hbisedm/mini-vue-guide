@@ -54,8 +54,8 @@ describe("effect", () => {
 });
 ```
 
-需要拿到响应式对象，然后每次响应式对象的属性发生变化时，对应的 effect 也要发生变化。
-那么先编写响应式对象的测试用例
+- 需要拿到响应式对象，然后每次响应式对象的属性发生变化时，对应的副作用函数 effect 也要发生执行。
+- 那么先编写响应式对象的测试用例
 
 ```typescript
 describe("reactive", () => {
@@ -70,18 +70,20 @@ describe("reactive", () => {
 });
 ```
 
-可以发现原来的对象和 reactive 函数处理过的对象是 2 个不同的对象
+可以发现原来的对象和 reactive 函数处理过的 Proxy 对象是 2 个不同的对象
 
-> vue3 才用 Proxy 对象处理响应式
+> vue3 采用这种 Proxy 对象处理原始对象变成响应式对象
 
-那么创建`reactive.ts`，使用 ES6 的 Proxy 对象 进行处理，`tsconfig.json`>`lib`配置 typescript 编译期才可以识别 ES6 的类型
+> 那么创建`reactive.ts`，使用 ES6 的 Proxy 对象 进行处理，`tsconfig.json`>`lib`配置 typescript 编译期才可以识别 ES6 的类型
+>
+> ```json
+> "lib": [
+>      "DOM",
+>      "ES6"
+>    ]
+> ```
 
-```json
-"lib": [
-      "DOM",
-      "ES6"
-    ]
-```
+### 响应式对象处理 reactive
 
 ```typescript
 export function reactive(raw) {
@@ -100,7 +102,7 @@ export function reactive(raw) {
 }
 ```
 
-这时候我们的`reactive.spec.ts`是可以跑通了，回到一开始的[`effect.spec.ts`](#effectTest),现在需要去实现 effect 函数到达每次响应式对象属性改变，劫持对应的依赖。
+这时候我们的`reactive.spec.ts`是可以跑通了，回到一开始的[`effect.spec.ts`](#effectTest),现在需要去实现 effect 函数到达每次响应式对象属性改变，劫持对应的依赖去执行。
 
 ```typescript
 export function effect(fn) {
@@ -121,12 +123,14 @@ class ReactiveEffect {
 }
 ```
 
-现在可以测试通过`expect(nextAge).toBe(11);`
-目前还缺对 对象进行**依赖收集与劫持**
-抛出疑问：如何进行依赖收集呢？
-我们刚才对当前对象进行了 Proxy 处理，那么我们可以在 get 方法内进行依赖收集。
-在`effect.ts`编写依赖收集的方法>track
-依赖收集就是将当前对象的属性的副作用函数进行收集，那么每个副作用函数都是单一的，需要使用个 Set 集合进行收集
+### 依赖收集
+
+- 现在可以测试通过`expect(nextAge).toBe(11);`
+- 目前还缺对 对象进行**依赖收集与劫持**
+- 抛出疑问：如何进行依赖收集呢？
+- 我们刚才对当前对象进行了 Proxy 处理，那么我们可以在 get 方法内进行依赖收集。
+- 在`effect.ts`编写依赖收集的方法 effect#track
+- 依赖收集就是将当前对象的属性的副作用函数 effect 进行收集，那么每个副作用函数都是没必要重复的，需要使用个 Set 集合进行收集
 
 ```typescript
 export function track(target, key) {
@@ -147,9 +151,9 @@ export function track(target, key) {
 ```
 
 依赖收集后，意味着每个对象的属性对应的副作用函数都在对应 set 集合里面了。
-未来如果对这个属性修改的话，set 函数就可以进行劫持，执行对应的函数。
+未来如果对这个属性修改的话，对应的 Proxy#set 就可以进行劫持，执行对应的副作用函数。
 
-劫持依赖
+### 劫持依赖
 
 ```typescript
 export function trigger(target, key) {
@@ -161,19 +165,30 @@ export function trigger(target, key) {
 }
 ```
 
-到此[`effect.spec.ts`](#effectTest)可以跑通了。
-
-目前的 effect.ts
+到此[`effect.spec.ts`](#effectTest)可以跑通了。目前的 effect.ts
 
 ```typescript
+class ReactiveEffect {
+  // 这个ReactiveEffect Class目的是抽离出fn的执行
+  private _fn: any;
+  constructor(fn) {
+    this._fn = fn;
+  }
+  run() {
+    activityEffect = this;
+    this._fn();
+  }
+}
+
+// 临时变量 目的是为了存储当前的effect
+let activityEffect;
+const targetsMap = new Map();
 export function effect(fn) {
+  // 触发effect创建一个对象 -> 里面有响应式对象的get会触发track函数（使用个activityEffect变量进行暂存当前这个effect）
   const reactiveEffect = new ReactiveEffect(fn);
   // effect在初始化时会第一次执行一次
   reactiveEffect.run();
 }
-// 临时变量 目的是为了存储当前的effect
-let activityEffect;
-const targetsMap = new Map();
 // 收集依赖
 export function track(target, key) {
   // target -> key -> dep
@@ -187,27 +202,17 @@ export function track(target, key) {
     dep = new Set();
     depsMap.set(key, dep);
   }
-
+  // 对当前这个effect进行存入set容器，未来的set操作就会去查看当前容器是否有这个属性的依赖，若有则执行与它相关
   dep.add(activityEffect);
 
   // new Dep()
 }
+// 触发依赖
 export function trigger(target, key) {
   const depsMap = targetsMap.get(target);
   const dep = depsMap.get(key);
   for (let item of dep) {
     item.run();
-  }
-}
-//
-class ReactiveEffect {
-  private _fn: any;
-  constructor(fn) {
-    this._fn = fn;
-  }
-  run() {
-    activityEffect = this;
-    this._fn();
   }
 }
 ```
