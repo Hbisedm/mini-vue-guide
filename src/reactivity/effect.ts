@@ -6,7 +6,7 @@ class ReactiveEffect {
   }
   run() {
     activityEffect = this;
-    this._fn();
+    return this._fn();
   }
 }
 
@@ -18,6 +18,8 @@ export function effect(fn) {
   const reactiveEffect = new ReactiveEffect(fn);
   // effect在初始化时会第一次执行一次
   reactiveEffect.run();
+
+  return reactiveEffect.run.bind(reactiveEffect);
 }
 // 收集依赖
 export function track(target, key) {

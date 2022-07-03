@@ -216,3 +216,50 @@ export function trigger(target, key) {
   }
 }
 ```
+
+## 实现 effect 返回 runner
+
+> effect 的返回值 是一个函数，通过运行这个函数，可以再次执行这个 effect 里面的逻辑代码
+> 首先编写 effect 返回值的测试用例
+
+```typescript
+it("should return runner", () => {
+  let testNum = 11;
+  const runner = effect(() => {
+    testNum++;
+    return "foo";
+  });
+  expect(testNum).toBe(12);
+  const foo = runner();
+  expect(testNum).toBe(13);
+  expect(foo).toBe("foo");
+});
+```
+
+- 分析：这个 effect 的 fn 函数有个返回值'foo'，当再次运行这个 runner 函数可以拿到这个返回值；并且运行这里的代码，`foo++`
+  在 effect.ts 编写对应代码
+
+```typescript
+export function effect(fn) {
+  // 触发effect创建一个对象 -> 里面有响应式对象的get会触发track函数（使用个activityEffect变量进行暂存当前这个effect）
+  const reactiveEffect = new ReactiveEffect(fn);
+  // effect在初始化时会第一次执行一次
+  reactiveEffect.run();
+  // 将当前的Effect对象的run返回出去
+  return reactiveEffect.run.bind(reactiveEffect);
+}
+class ReactiveEffect {
+  // 这个ReactiveEffect Class目的是抽离出fn的执行,方便未来依赖收集的操作
+  private _fn: any;
+  constructor(fn) {
+    this._fn = fn;
+  }
+  run() {
+    activityEffect = this;
+    // 返回这个用户的fn代码
+    return this._fn();
+  }
+}
+```
+
+## 实现 effect 的 scheduler
