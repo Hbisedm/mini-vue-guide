@@ -1,7 +1,7 @@
 class ReactiveEffect {
   // 这个ReactiveEffect Class目的是抽离出fn的执行,方便未来依赖收集的操作
   private _fn: any;
-  constructor(fn) {
+  constructor(fn, public scheduler?) {
     this._fn = fn;
   }
   run() {
@@ -13,9 +13,9 @@ class ReactiveEffect {
 // 临时变量 目的是为了存储当前的effect
 let activityEffect;
 const targetsMap = new Map();
-export function effect(fn) {
+export function effect(fn, options: any = {}) {
   // 触发effect创建一个对象 -> 里面有响应式对象的get会触发track函数（使用个activityEffect变量进行暂存当前这个effect）
-  const reactiveEffect = new ReactiveEffect(fn);
+  const reactiveEffect = new ReactiveEffect(fn, options.scheduler);
   // effect在初始化时会第一次执行一次
   reactiveEffect.run();
 
@@ -42,6 +42,12 @@ export function trigger(target, key) {
   const depsMap = targetsMap.get(target);
   const dep = depsMap.get(key);
   for (let item of dep) {
-    item.run();
+    if (item.scheduler) {
+      // 当前的effect依赖实例如果有scheduler属性的话，说明effect的构造有传递第二个参数
+      item.scheduler();
+    } else {
+      // 否则执行原来的逻辑
+      item.run();
+    }
   }
 }

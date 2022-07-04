@@ -263,3 +263,81 @@ class ReactiveEffect {
 ```
 
 ## 实现 effect 的 scheduler
+
+copy vue3 github 的 [scheduler 测试用例](https://github.com/vuejs/core/blob/main/packages/reactivity/__tests__/effect.spec.ts#L680)
+
+```typescript
+it("scheduler", () => {
+  let dummy;
+  let run: any;
+  const scheduler = jest.fn(() => {
+    run = runner;
+  });
+  const obj = reactive({ foo: 1 });
+  const runner = effect(
+    () => {
+      dummy = obj.foo;
+    },
+    { scheduler }
+  );
+  expect(scheduler).not.toHaveBeenCalled();
+  expect(dummy).toBe(1);
+  // should be called on first trigger
+  obj.foo++;
+  expect(scheduler).toHaveBeenCalledTimes(1);
+  // should not run yet
+  expect(dummy).toBe(1);
+  // manually run
+  run();
+  // should have run
+  expect(dummy).toBe(2);
+});
+```
+
+可以发现 我们原来的 effect 加入个对象，而这个对象里面有 scheduler 属性
+
+- 第一次使用 effect 时，里面的 runner 被执行一次，但是 scheduler 没有被调用
+- 但对响应式对象进行 set 操作 update 时，scheduler 被执行一次，而 runner 里面的值没被赋值
+- 但执行 run 后里面的值才被执行
+
+那么我们先改写 effect 的构造函数
+
+- 接受一个 options 对象，且里面有个 scheduler 方法
+
+```typescript
+export function effect(fn, options: any = {}) {
+  // 触发effect创建一个对象 -> 里面有响应式对象的get会触发track函数（使用个activityEffect变量进行暂存当前这个effect）
+  const reactiveEffect = new ReactiveEffect(fn, options.scheduler);
+  // effect在初始化时会第一次执行一次
+  reactiveEffect.run();
+
+  return reactiveEffect.run.bind(reactiveEffect);
+}
+```
+
+那么改写 ReactiveEffect 的构造函数，public 让它变为公有属性 ？表示它是个可传参数
+
+```typescript
+  constructor(fn, public scheduler?) {
+    this._fn = fn;
+  }
+
+```
+
+接着改变些劫持依赖的代码，也就是 proxy#Set
+
+```typescript
+export function trigger(target, key) {
+  const depsMap = targetsMap.get(target);
+  const dep = depsMap.get(key);
+  for (let item of dep) {
+    if (item.scheduler) {
+      // 当前的effect依赖实例如果有scheduler属性的话，说明effect的构造有传递第二个参数
+      item.scheduler();
+    } else {
+      // 否则执行原来的逻辑
+      item.run();
+    }
+  }
+}
+```
