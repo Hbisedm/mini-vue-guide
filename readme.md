@@ -540,3 +540,198 @@ class ReactiveEffect {
   }
 }
 ```
+
+### reactive#readonly 的实现
+
+编写 readonly 测试用例
+
+```typescript
+describe("readonly", () => {
+  it("happy path", () => {
+    const original = {
+      foo: 1,
+    };
+    const wrapped = readonly(original);
+    expect(wrapped).not.toBe(original);
+    expect(wrapped.foo).toBe(1);
+  });
+  it("readonly cannot set", () => {
+    const user = {
+      age: 23,
+    };
+    console.warn = jest.fn();
+    const readonlyUser = readonly(user);
+    readonlyUser.age++; // 触发set
+    expect(console.warn).toBeCalled();
+  });
+});
+```
+
+- 当使用 readonly 包裹后的对象，它是个只能读取，不能修改的
+- 思路：将 Proxy#set 内的实现去掉，直接返回 true 即可
+
+```typescript
+export function readonly(raw) {
+  return new Proxy(raw, {
+    get(target, key) {
+      const res = Reflect.get(target, key);
+      track(target, key);
+      return res;
+    },
+    set(target, key, val) {
+      return true;
+    },
+  });
+}
+```
+
+- 可以发现 readonly 与 reactive 里面的代码逻辑是相同的。
+- 可以抽离出 get 方法，且抽出 readonly 的状态，
+  - 当为 reactive 时，使用 track 方法
+  - readonly 时，不需要使用 track 方法
+
+```typescript
+const createGetter = function (isReadonly = false) {
+  return function get(target, key) {
+    const res = Reflect.get(target, key);
+    // 收集依赖
+    if (!isReadonly) {
+      track(target, key);
+    }
+    return res;
+  };
+};
+```
+
+> 因为 get 使用了个 createGetter 方法，为了保持代码可读性，set 也可以使用 createSetter 方法，保持一致
+
+```typescript
+const createSetter = function () {
+  return function set(target, key, val) {
+    const res = Reflect.set(target, key, val);
+    // 触发依赖
+    trigger(target, key);
+    return res;
+  };
+};
+```
+
+```typescript
+export function reactive(raw) {
+  return new Proxy(raw, {
+    get: creategetter(),
+    set: createsetter(),
+  });
+}
+export function readonly(raw) {
+  return new Proxy(raw, {
+    get: createGetter(true),
+    set(target, key, val) {
+      return true;
+    },
+  });
+}
+```
+
+- 每次使用 new Proxy(raw, handeler)里面都是个处理器对象，这个对象也是可以抽离出去
+- 创建个`baseHandlers.ts`将这些内容都抽离出来
+  - createGetter
+  - createSetter
+  - handeler
+
+```typescript
+const createGetter = function (isReadonly = false) {
+  return function get(target, key) {
+    const res = Reflect.get(target, key);
+    // 收集依赖
+    if (!isReadonly) {
+      track(target, key);
+    }
+    return res;
+  };
+};
+const createSetter = function () {
+  return function set(target, key, val) {
+    const res = Reflect.set(target, key, val);
+    // 触发依赖
+    trigger(target, key);
+    return res;
+  };
+};
+export const mutableHandlers = {
+  get: creategetter(),
+  set: createsetter(),
+};
+export const readonlyHandlers = {
+  get: creategetter(),
+  set: function (target, key, val) {
+    return true;
+  },
+};
+```
+
+```typescript
+import { mutableHandlers, readonlyHandlers } from "./baseHandlers";
+
+export function reactive(raw) {
+  return new Proxy(raw, mutableHandlers);
+}
+export function readonly(raw) {
+  return new Proxy(raw, readonlyHandlers);
+}
+```
+
+- 再抽离这个 new Proxy 方法
+
+```typescript
+import { mutableHandlers, readonlyHandlers } from "./baseHandlers";
+
+export function reactive(raw) {
+  return createActivityObj(raw, mutableHandlers);
+}
+export function readonly(raw) {
+  return createActivityObj(raw, readonlyHandlers);
+}
+function createActivityObj(raw: any, baseHandlers: any) {
+  return new Proxy(raw, baseHandlers);
+}
+```
+
+- 这样抽离，看起来就很干净
+
+![](https://raw.githubusercontent.com/Hbisedm/my-blob-picGo/main/img/202207062219745.png)
+这里可以抽出去，每次都调用很耗性能
+
+```typescript
+const get = createGetter();
+const set = createSetter();
+const readonlyGet = createGetter(true);
+
+export const mutableHandlers = {
+  get,
+  set,
+};
+export const readonlyHandlers = {
+  get: readonlyGet,
+  set: function (target, key, val) {
+    return true;
+  },
+};
+```
+
+### 实现 readonly 对象 set 时候报警告
+
+这个在 set 的时候，抛出 warn 就可以达到目的，修改 readonlyHandlers 即可
+
+```typescript
+export const readonlyHandlers = {
+  get: readonlyGet,
+  set: function (target, key, val) {
+    console.warn(
+      `${key}cannot set, beacause current Object is readlony`,
+      target
+    );
+    return true;
+  },
+};
+```

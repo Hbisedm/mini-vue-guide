@@ -79,6 +79,3 @@ export function trigger(target, key) {
 export function stop(runner: any) {
   runner._effect.stop();
 }
-
-### stop的参数
-copy 伏安法
