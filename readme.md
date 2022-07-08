@@ -1103,7 +1103,7 @@ it("stop", () => {
 });
 ```
 
-> 可以发现我们的 effect 返回值 runner，传入到一个 stop 函数后，这个 runner 里面的代码逻辑就不在会被清空掉，也就是后面的依赖劫持后，会运行 dep 里面的每个 runner，但是这时候的 runner 已经清空了。不在自动帮我们运行这个 runner 了。除非手动运行。
+> 可以发现我们的 effect 返回值 runner，传入到一个 stop 函数后，这个 runner 里面的代码逻辑就不再自动执行了，会被清空掉，也就是后面的依赖劫持后，会运行 dep 里面的每个 runner，但是这时候的 runner 已经清空了。不再自动帮我们运行这个 runner 了。除非手动运行。
 
 那么如何实现上述功能呢
 
@@ -1518,4 +1518,111 @@ const createGetter = function (isReadonly = false) {
     return res;
   };
 };
+```
+
+## 优化stop
+
+```typescript
+ it("stop", () => {
+    let dummy;
+    const obj = reactive({ prop: 1 });
+    const runner = effect(() => {
+      dummy = obj.prop;
+    });
+    obj.prop = 2;
+    expect(dummy).toBe(2);
+    stop(runner);
+    // obj.prop = 3;
+    // get set
+    //  obj.prop = obj.prop + 1
+     obj.prop++
+    expect(dummy).toBe(2);
+
+    // stopped effect should still be manually callable
+    runner();
+    expect(dummy).toBe(3);
+  });
+
+```
+将`obj.prop = 3` => `obj.prop++` 发现jest通不过。
+> 原因是： `obj.prop++` => `obj.prop = obj.prop + 1`
+> 这里会get后set的，那么之前的get操作会收集依赖导致stop函数运行删除dep里面的依赖白删除了。
+> 那么就需要在这个get(track)里面的做手脚。
+> 加入个全局变量`shouldTrack`进行判断处理
+
+```typescript
+export function track(target, key) {
+  // target -> key -> dep
+  let depsMap = targetsMap.get(target);
+  if (!depsMap) {
+    depsMap = new Map();
+    targetsMap.set(target, depsMap);
+  }
+  let dep = depsMap.get(key);
+  if (!dep) {
+    dep = new Set();
+    depsMap.set(key, dep);
+  }
+  // 对当前这个effect进行存入set容器，未来的set操作就会去查看当前容器是否有这个属性的依赖，若有则执行与它相关
+  if (!activityEffect) return;
+  if (!shouldTrack) return; // false do next line
+  dep.add(activityEffect);
+  activityEffect.deps.push(dep);
+}
+```
+- ReactivityEffect#run方法内处理下即可
+```typescript
+ run() {
+    activityEffect = this;
+    if(!this.clearActivity) {// 若clearActivity为false 
+      return this._fn()
+    }
+    shouldTrack = true
+    const result = this._fn() // 执行时，触发里面的响应式对象track方法
+    shouldTrack = false
+    return result
+  }
+```
+测试通过了，接着就是优化下代码。
+发现track函数里面这2个代码可以放到最前面
+```typescript
+ if (!activityEffect) return;
+ if (!shouldTrack) return;
+```
+使用个函数包装起来
+```typescript
+function isTracking() {
+  return shouldTrack && activityEffect !== undefined
+}
+```
+
+若dep里面包含了activityEffect的话，就没有必要继续收集了
+```typescript
+if(dep.has(activityEffect)) return 
+  dep.add(activityEffect);
+```
+目前优化后的代码
+```typescript
+// 收集依赖
+export function track(target, key) {
+  if(!isTracking()) return
+  // target -> key -> dep
+  let depsMap = targetsMap.get(target);
+  if (!depsMap) {
+    depsMap = new Map();
+    targetsMap.set(target, depsMap);
+  }
+  let dep = depsMap.get(key);
+  if (!dep) {
+    dep = new Set();
+    depsMap.set(key, dep);
+  }
+  if(dep.has(activityEffect)) return
+  // 对当前这个effect进行存入set容器，未来的set操作就会去查看当前容器是否有这个属性的依赖，若有则执行与它相关
+  dep.add(activityEffect);
+  activityEffect.deps.push(dep);
+}
+function isTracking() {
+  return shouldTrack && activityEffect !== undefined
+}
 ```
