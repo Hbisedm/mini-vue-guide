@@ -1574,7 +1574,7 @@ export function track(target, key) {
 ```typescript
  run() {
     activityEffect = this;
-    if(!this.clearActivity) {// 若clearActivity为false 
+    if(!this.clearActivity) {// 若clearActivity为false => 触发get#track => 当前的shouldTrack为false => 不会触发收集依赖
       return this._fn()
     }
     shouldTrack = true
@@ -1626,3 +1626,5 @@ function isTracking() {
   return shouldTrack && activityEffect !== undefined
 }
 ```
+注意点：
+![](https://raw.githubusercontent.com/Hbisedm/my-blob-picGo/main/img/202207082339755.png)

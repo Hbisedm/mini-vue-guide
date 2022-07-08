@@ -15,10 +15,10 @@ class ReactiveEffect {
   run() {
     activityEffect = this;
     if(!this.clearActivity) {
-      // 若clearActivity为false 直接运行fn
+      // 若clearActivity为false => 触发get#track => 当前的shouldTrack为false => 不会触发收集依赖
       return this._fn()
     }
-    shouldTrack = true
+    shouldTrack = true // 每次先设置为true后 说明当前的对象是要执行收集依赖的
     const result = this._fn() // 执行时，触发里面的响应式对象track方法
     shouldTrack = false
     return result
