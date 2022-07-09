@@ -344,7 +344,7 @@ export function trigger(target, key) {
 
 ## effect 实现 stop 功能
 
-copy 官方的 测试用例[https://github.com/vuejs/core/blob/769e5555f9d9004ce541613341652db859881570/packages/reactivity/__tests__/effect.spec.ts#L783]
+copy 官方的 测试用例[<https://github.com/vuejs/core/blob/769e5555f9d9004ce541613341652db859881570/packages/reactivity/>**tests**/effect.spec.ts#L783]
 
 ```typescript
 it("stop", () => {
@@ -473,7 +473,7 @@ class ReactiveEffect {
 
 ### stop 的参数
 
-copy 官方的 onStop 测试用例[https://github.com/vuejs/core/blob/769e5555f9d9004ce541613341652db859881570/packages/reactivity/__tests__/effect.spec.ts#L820]
+copy 官方的 onStop 测试用例[<https://github.com/vuejs/core/blob/769e5555f9d9004ce541613341652db859881570/packages/reactivity/>**tests**/effect.spec.ts#L820]
 
 ```typescript
 it("events: onStop", () => {
@@ -1082,7 +1082,7 @@ export function trigger(target, key) {
 
 ## effect 实现 stop 功能
 
-copy 官方的 测试用例[https://github.com/vuejs/core/blob/769e5555f9d9004ce541613341652db859881570/packages/reactivity/__tests__/effect.spec.ts#L783]
+copy 官方的 测试用例[<https://github.com/vuejs/core/blob/769e5555f9d9004ce541613341652db859881570/packages/reactivity/>**tests**/effect.spec.ts#L783]
 
 ```typescript
 it("stop", () => {
@@ -1211,7 +1211,7 @@ class ReactiveEffect {
 
 ### stop 的参数
 
-copy 官方的 onStop 测试用例[https://github.com/vuejs/core/blob/769e5555f9d9004ce541613341652db859881570/packages/reactivity/__tests__/effect.spec.ts#L820]
+copy 官方的 onStop 测试用例[<https://github.com/vuejs/core/blob/769e5555f9d9004ce541613341652db859881570/packages/reactivity/>**tests**/effect.spec.ts#L820]
 
 ```typescript
 it("events: onStop", () => {
@@ -1520,34 +1520,35 @@ const createGetter = function (isReadonly = false) {
 };
 ```
 
-## 优化stop
+## 优化 stop
 
 ```typescript
- it("stop", () => {
-    let dummy;
-    const obj = reactive({ prop: 1 });
-    const runner = effect(() => {
-      dummy = obj.prop;
-    });
-    obj.prop = 2;
-    expect(dummy).toBe(2);
-    stop(runner);
-    // obj.prop = 3;
-    // get set
-    //  obj.prop = obj.prop + 1
-     obj.prop++
-    expect(dummy).toBe(2);
-
-    // stopped effect should still be manually callable
-    runner();
-    expect(dummy).toBe(3);
+it("stop", () => {
+  let dummy;
+  const obj = reactive({ prop: 1 });
+  const runner = effect(() => {
+    dummy = obj.prop;
   });
+  obj.prop = 2;
+  expect(dummy).toBe(2);
+  stop(runner);
+  // obj.prop = 3;
+  // get set
+  //  obj.prop = obj.prop + 1
+  obj.prop++;
+  expect(dummy).toBe(2);
 
+  // stopped effect should still be manually callable
+  runner();
+  expect(dummy).toBe(3);
+});
 ```
-将`obj.prop = 3` => `obj.prop++` 发现jest通不过。
+
+将`obj.prop = 3` => `obj.prop++` 发现 jest 通不过。
+
 > 原因是： `obj.prop++` => `obj.prop = obj.prop + 1`
-> 这里会get后set的，那么之前的get操作会收集依赖导致stop函数运行删除dep里面的依赖白删除了。
-> 那么就需要在这个get(track)里面的做手脚。
+> 这里会 get 后 set 的，那么之前的 get 操作会收集依赖导致 stop 函数运行删除 dep 里面的依赖白删除了。
+> 那么就需要在这个 get(track)里面的做手脚。
 > 加入个全局变量`shouldTrack`进行判断处理
 
 ```typescript
@@ -1570,7 +1571,9 @@ export function track(target, key) {
   activityEffect.deps.push(dep);
 }
 ```
-- ReactivityEffect#run方法内处理下即可
+
+- ReactivityEffect#run 方法内处理下即可
+
 ```typescript
  run() {
     activityEffect = this;
@@ -1583,29 +1586,36 @@ export function track(target, key) {
     return result
   }
 ```
+
 测试通过了，接着就是优化下代码。
-发现track函数里面这2个代码可以放到最前面
+发现 track 函数里面这 2 个代码可以放到最前面
+
 ```typescript
- if (!activityEffect) return;
- if (!shouldTrack) return;
+if (!activityEffect) return;
+if (!shouldTrack) return;
 ```
+
 使用个函数包装起来
+
 ```typescript
 function isTracking() {
-  return shouldTrack && activityEffect !== undefined
+  return shouldTrack && activityEffect !== undefined;
 }
 ```
 
-若dep里面包含了activityEffect的话，就没有必要继续收集了
+若 dep 里面包含了 activityEffect 的话，就没有必要继续收集了
+
 ```typescript
-if(dep.has(activityEffect)) return 
-  dep.add(activityEffect);
+if (dep.has(activityEffect)) return;
+dep.add(activityEffect);
 ```
+
 目前优化后的代码
+
 ```typescript
 // 收集依赖
 export function track(target, key) {
-  if(!isTracking()) return
+  if (!isTracking()) return;
   // target -> key -> dep
   let depsMap = targetsMap.get(target);
   if (!depsMap) {
@@ -1617,14 +1627,64 @@ export function track(target, key) {
     dep = new Set();
     depsMap.set(key, dep);
   }
-  if(dep.has(activityEffect)) return
+  if (dep.has(activityEffect)) return;
   // 对当前这个effect进行存入set容器，未来的set操作就会去查看当前容器是否有这个属性的依赖，若有则执行与它相关
   dep.add(activityEffect);
   activityEffect.deps.push(dep);
 }
 function isTracking() {
-  return shouldTrack && activityEffect !== undefined
+  return shouldTrack && activityEffect !== undefined;
 }
 ```
+
 注意点：
 ![](https://raw.githubusercontent.com/Hbisedm/my-blob-picGo/main/img/202207082339755.png)
+
+## reactive、readonly 嵌套对象转换功能
+
+编写测试用例
+
+```typescript
+it("happy path", () => {
+  const original = {
+    foo: 1,
+    bar: {
+      foo: "test",
+    },
+  };
+  const wrapped = readonly(original);
+  expect(wrapped).not.toBe(original);
+  expect(wrapped.foo).toBe(1);
+  expect(isReadonly(wrapped)).toBe(true);
+  expect(isReadonly(original)).toBe(false);
+
+  expect(isReadonly(wrapped.bar)).toBe(true); // 对嵌套对象进行判断
+  expect(isReadonly(original.bar)).toBe(false);
+});
+it("happy path", () => {
+  const originUser = {
+    name: "Hbisedm",
+    age: 19,
+    friend: {
+      name: "Sam",
+    },
+  };
+  const user = reactive(originUser);
+  expect(user).not.toBe(originUser);
+  expect(user.age).toBe(19);
+  expect(isReactive(user)).toBe(true);
+  expect(isReactive(originUser)).toBe(false);
+  expect(isReactive(user.friend)).toBe(true); // 对嵌套对象进行判断
+  expect(isReactive(originUser.friend)).toBe(false);
+});
+```
+
+- 每次对响应式对象进行取值操作都会触发 get，所以在 get 的逻辑代码里面进行处理即可。
+- `baseHandlers.ts#createGetter`判断当前 return 的值是不是对象，若是，则加入 readonly、reactive 操作
+
+```typescript
+const res = Reflect.get(target, key);
+if (isObject(res)) {
+  return isReadonly ? readonly(res) : reactive(res);
+}
+```
