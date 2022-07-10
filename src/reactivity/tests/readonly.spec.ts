@@ -1,5 +1,5 @@
 import { effect } from "../effect";
-import { isReadonly, reactive, readonly } from "../reactive";
+import { isProxy, isReadonly, reactive, readonly } from "../reactive";
 
 describe("readonly", () => {
   it("happy path", () => {
@@ -17,6 +17,7 @@ describe("readonly", () => {
 
     expect(isReadonly(wrapped.bar)).toBe(true);
     expect(isReadonly(original.bar)).toBe(false);
+    expect(isProxy(wrapped)).toBe(true);
   });
   it("readonly cannot set", () => {
     const user = {

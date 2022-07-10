@@ -1748,3 +1748,13 @@ export function shallowReadonly(raw) {
   return createActivityObj(raw, shallowReadonlyHandlers);
 }
 ```
+
+## 实现 isProxy
+
+在`reactive.ts`内实现 isProxy 方法，判断是否为`isReadonly`、`isReactive`其中一个
+
+```typescript
+export function isProxy(value) {
+  return isReactive(value) || isReadonly(value);
+}
+```
