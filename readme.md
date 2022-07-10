@@ -1688,3 +1688,63 @@ if (isObject(res)) {
   return isReadonly ? readonly(res) : reactive(res);
 }
 ```
+
+## shallowReadonly 的实现
+
+shallow -> 浅的意思 -> 第一层有 readonly 的特性，里面的对象没有这个特性
+
+```typescript
+describe("shallowReadonly", () => {
+  test("should not make non-reactive propertiese reactive", () => {
+    const props = shallowReadonly({
+      n: {
+        foo: 1,
+      },
+    });
+    expect(isReadonly(props)).toBe(true);
+    expect(isReadonly(props.n)).toBe(false);
+  });
+});
+```
+
+> 实现过程： 先在`reactive.ts`内实现`shallowReadonly`方法,在 baseHandlers#createGetter 内加多个参数表示是否为 shallow 状态，若为 shallow 状态则将这个 key 对应的 val 抛出去也不用依赖收集的操作了。
+
+```typescript
+export const shallowReadonlyHandlers = extend({}, readonlyHandlers, {
+  get: shallowReadonlyGet,
+});
+```
+
+```typescript
+function createGetter(isReadonly = false, shallow = false) {
+  return function get(target, key) {
+    if (key === ReactiveFlags.IS_REACTIVE) {
+      return !isReadonly;
+    }
+    if (key === ReactiveFlags.IS_READONLY) {
+      return isReadonly;
+    }
+    const res = Reflect.get(target, key);
+
+    if (shallow) {
+      //直接抛出去
+      return res;
+    }
+    if (isObject(res)) {
+      return isReadonly ? readonly(res) : reactive(res);
+    }
+
+    // 收集依赖
+    if (!isReadonly) {
+      track(target, key);
+    }
+    return res;
+  };
+}
+```
+
+```typescript
+export function shallowReadonly(raw) {
+  return createActivityObj(raw, shallowReadonlyHandlers);
+}
+```
