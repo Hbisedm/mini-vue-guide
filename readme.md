@@ -1758,3 +1758,235 @@ export function isProxy(value) {
   return isReactive(value) || isReadonly(value);
 }
 ```
+
+## 实现 ref
+
+copy 官方的测试用例
+
+```typescript
+describe("reactivity/ref", () => {
+  it("should hold a value", () => {
+    const a = ref(1);
+    expect(a.value).toBe(1);
+    a.value = 2;
+    expect(a.value).toBe(2);
+  });
+
+  it("should be reactive", () => {
+    const a = ref(1);
+    let dummy;
+    let calls = 0;
+    effect(() => {
+      calls++;
+      dummy = a.value;
+    });
+    expect(calls).toBe(1);
+    expect(dummy).toBe(1);
+    a.value = 2;
+    expect(calls).toBe(2);
+    expect(dummy).toBe(2);
+    // same value should not trigger
+    a.value = 2;
+    expect(calls).toBe(2);
+  });
+
+  it("should make nested properties reactive", () => {
+    const a = ref({
+      count: 1,
+    });
+    let dummy;
+    effect(() => {
+      dummy = a.value.count;
+    });
+    expect(dummy).toBe(1);
+    a.value.count = 2;
+    expect(dummy).toBe(2);
+  });
+});
+```
+
+- ref 是一个含有 value 的对象
+- 当有 effect 的执行时，ref 的 value 也需要被依赖收集起来。修改时，当发现和原来的对象/值一样的话。不触发依赖。
+- ref 可以包裹个 obj，将 value 指向个 reactive(obj)即可。
+
+抽离 effect 的 track 与 trigger
+
+```typescript
+// 收集依赖
+export function track(target, key) {
+  if (!isTracking()) return;
+  // target -> key -> dep
+  let depsMap = targetsMap.get(target);
+  if (!depsMap) {
+    depsMap = new Map();
+    targetsMap.set(target, depsMap);
+  }
+  let dep = depsMap.get(key);
+  if (!dep) {
+    dep = new Set();
+    depsMap.set(key, dep);
+  }
+  trackEffects(dep);
+}
+
+export function trackEffects(dep) {
+  if (dep.has(activityEffect)) return;
+  // 对当前这个effect进行存入set容器，未来的set操作就会去查看当前容器是否有这个属性的依赖，若有则执行与它相关
+  dep.add(activityEffect);
+  activityEffect.deps.push(dep);
+}
+
+// 触发依赖
+export function trigger(target, key) {
+  const depsMap = targetsMap.get(target);
+  const dep = depsMap.get(key);
+  triggerEffects(dep);
+}
+export function triggerEffects(dep) {
+  for (let item of dep) {
+    if (item.scheduler) {
+      // 当前的effect依赖实例如果有scheduler属性的话，说明effect的构造有传递第二个参数
+      item.scheduler();
+    } else {
+      // 否则执行原来的逻辑
+      item.run();
+    }
+  }
+}
+```
+
+创建 Ref 的类，里面有个`_value`表示当前的 value
+
+```typescript
+class RefImpl {
+  private _value: any;
+  private dep: any = new Set();
+  private _rawValue: any;
+  constructor(val) {
+    this._rawValue = val;
+    this._value = isObject(val) ? reactive(val) : val;
+  }
+  get value() {
+    //当使用后没有effect执行。
+    if (isTracking()) {
+      trackEffects(this.dep);
+    }
+    return this._value;
+  }
+  set value(newVal) {
+    if (newVal === this._rawValue) return;
+    this._rawValue = newVal;
+    this._value = isObject(newVal) ? reactive(newVal) : newVal;
+    triggerEffects(this.dep);
+  }
+}
+export function ref(value) {
+  return new RefImpl(value);
+}
+```
+
+### 优化代码
+
+- 抽离出 Object.is 到工具包里`shared/index.ts`
+
+```typescript
+export const hasChange = Object.is;
+```
+
+```typescript
+this._value = isObject(newVal) ? reactive(newVal) : newVal;
+// 抽离出来
+function convert(value) {
+  return isObject(value) ? reactive(value) : value;
+}
+```
+
+## 实现 isRef 与 unRef
+
+测试用例：
+
+```typescript
+it("isRef", () => {
+  const a = ref(1);
+  const b = 1;
+  const c = reactive({
+    num: 1,
+  });
+  expect(isRef(a)).toBe(true);
+  expect(isRef(b)).toBe(false);
+  expect(isRef(c.num)).toBe(false);
+});
+it("unRef", () => {
+  const a = ref(1);
+  const b = 1;
+  expect(unRef(a)).toBe(1);
+  expect(unRef(b)).toBe(1);
+});
+```
+
+> 分析一下：
+>
+> - `isRef`是判断当前的值是不是被 ref 函数执行过，那么我们可以使用个`__v_isRef`属性去做判断即可
+> - `unRef`是将 ref 函数执行过的值，还原成原来的样子
+
+```typescript
+class RefImpl {
+  public __v_isRef = true
+  ...
+}
+export function isRef(value) {
+  return !!value.__v_isRef;
+}
+export function unRef(val) {
+  return isRef(val) ? val.value : val;
+}
+```
+
+## 实现 proxyRefs
+
+> 使用 ref 的对象，在 vue3 的 template 里面我们都不用使用 value 去拿值
+> 如：const age = ref(23) -> {{age}}
+
+编写测试用例
+
+```typescript
+it("proxyRefs", () => {
+  const user = {
+    age: ref(10),
+    name: "Sam",
+  };
+  const proxyUser = proxyRefs(user);
+  expect(user.age.value).toBe(10);
+  expect(proxyUser.age).toBe(10);
+  expect(proxyUser.name).toBe("Sam");
+
+  proxyUser.age = 20;
+  expect(user.age.value).toBe(20);
+  expect(proxyUser.age).toBe(20);
+
+  proxyUser.age = ref(10);
+  expect(user.age.value).toBe(10);
+  expect(proxyUser.age).toBe(10);
+});
+```
+
+在`ref.ts`中实现`proxyRefs`
+
+```typescript
+export function proxyRefs(objectWithRef) {
+  return new Proxy(objectWithRef, {
+    // key->value ref?ref.value:value
+    get(target, key) {
+      return unRef(target[key]);
+    },
+    // set 上一个值是ref，新值不是ref,需要特殊处理
+    set(target, key, value) {
+      if (isRef(target[key]) && !isRef(value)) {
+        return (target[key].value = value);
+      } else {
+        return Reflect.set(target, key, value);
+      }
+    },
+  });
+}
+```

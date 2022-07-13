@@ -9,8 +9,8 @@ let shouldTrack;
  * shouldTrack 是否要track：每次执行fn前都会将shouldTrack设置为true
  * activityEffect === undefined 的情况为 当建立个响应式对象后，它没有对应的effect副作用函数包裹过
  */
-function isTracking() {
-  return shouldTrack && activityEffect !== undefined
+export function isTracking() {
+  return shouldTrack && activityEffect !== undefined;
 }
 
 /**
@@ -27,15 +27,15 @@ class ReactiveEffect {
   run() {
     activityEffect = this;
     // 若clearActivity为false => 触发get#track => 当前的shouldTrack为false => 不会触发收集依赖
-    if(!this.clearActivity) {
-      return this._fn()
+    if (!this.clearActivity) {
+      return this._fn();
     }
     // 每次先设置为true后 说明当前的对象是要执行收集依赖的
-    shouldTrack = true 
+    shouldTrack = true;
     // 执行时，触发里面的响应式对象track方法，因为响应式对象里面get
-    const result = this._fn() 
-    shouldTrack = false
-    return result
+    const result = this._fn();
+    shouldTrack = false;
+    return result;
   }
   stop() {
     if (this.clearActivity) {
@@ -54,7 +54,7 @@ function cleanEffect(effect) {
   effect.deps.forEach((dep: any) => {
     dep.delete(effect);
   });
-  effect.deps.length = 0
+  effect.deps.length = 0;
 }
 const targetsMap = new Map();
 export function effect(fn, options: any = {}) {
@@ -71,7 +71,7 @@ export function effect(fn, options: any = {}) {
 }
 // 收集依赖
 export function track(target, key) {
-  if(!isTracking()) return
+  if (!isTracking()) return;
   // target -> key -> dep
   let depsMap = targetsMap.get(target);
   if (!depsMap) {
@@ -83,15 +83,23 @@ export function track(target, key) {
     dep = new Set();
     depsMap.set(key, dep);
   }
-  if(dep.has(activityEffect)) return
+  trackEffects(dep);
+}
+
+export function trackEffects(dep) {
+  if (dep.has(activityEffect)) return;
   // 对当前这个effect进行存入set容器，未来的set操作就会去查看当前容器是否有这个属性的依赖，若有则执行与它相关
   dep.add(activityEffect);
   activityEffect.deps.push(dep);
 }
+
 // 触发依赖
 export function trigger(target, key) {
   const depsMap = targetsMap.get(target);
   const dep = depsMap.get(key);
+  triggerEffects(dep);
+}
+export function triggerEffects(dep) {
   for (let item of dep) {
     if (item.scheduler) {
       // 当前的effect依赖实例如果有scheduler属性的话，说明effect的构造有传递第二个参数
