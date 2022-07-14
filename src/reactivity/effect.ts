@@ -16,7 +16,7 @@ export function isTracking() {
 /**
  * 这个ReactiveEffect Class目的是抽离出fn的执行,方便未来依赖收集的操作
  */
-class ReactiveEffect {
+export class ReactiveEffect {
   private _fn: any;
   deps = [];
   onStop?: any;
@@ -96,6 +96,8 @@ export function trackEffects(dep) {
 // 触发依赖
 export function trigger(target, key) {
   const depsMap = targetsMap.get(target);
+  // 若没有，说明当前没有对应依赖
+  if (!depsMap) return;
   const dep = depsMap.get(key);
   triggerEffects(dep);
 }

@@ -1990,3 +1990,129 @@ export function proxyRefs(objectWithRef) {
   });
 }
 ```
+
+## 实现 computed
+
+computed 函数运行后的值，也 ref 类似，也是需要通过`.value`进行取值。
+编写测试用例 happy path
+
+```typescript
+it("happy path", () => {
+  const user = reactive({
+    age: 1,
+  });
+
+  const age = computed(() => {
+    return user.age;
+  });
+  expect(age.value).toBe(1);
+});
+```
+
+- 创建`computed.ts`
+- computed 函数接受个 getter 函数，然后创建个 ComputedRefImpl 对象
+
+```typescript
+class ComputedRefImpl {
+  private _getter: any;
+  private _drity: boolean = true;
+  constructor(getter) {
+    this._getter = getter;
+  }
+  get value() {
+    return this.this._getter();
+  }
+}
+export function computed(getter) {
+  return new ComputedRefImpl(getter);
+}
+```
+
+测试通过，接着开始实现 computed 的一些特性。
+
+- 默认不允许 getter，这点与 effect 不一样
+- 缓存性
+- 调用引入的响应式对象变量，computed 的 getter 不运行
+
+copy 官方的测试
+
+```typescript
+describe("computed", () => {
+  it("happy path", () => {
+    const user = reactive({
+      age: 1,
+    });
+
+    const age = computed(() => {
+      return user.age;
+    });
+    expect(age.value).toBe(1);
+  });
+
+  it("should compute lazily", () => {
+    const value = reactive({
+      foo: 1,
+    });
+    const getter = jest.fn(() => value.foo);
+    const cValue = computed(getter);
+
+    // lazy
+    expect(getter).not.toHaveBeenCalled();
+
+    expect(cValue.value).toBe(1);
+    expect(getter).toHaveBeenCalledTimes(1);
+
+    //   // should not compute again
+    cValue.value;
+    expect(getter).toHaveBeenCalledTimes(1);
+
+    //   // should not compute until needed
+    value.foo = 1;
+    expect(getter).toHaveBeenCalledTimes(1);
+
+    //   // now it should compute
+    expect(cValue.value).toBe(1);
+    expect(getter).toHaveBeenCalledTimes(2);
+
+    // should not compute again
+    cValue.value;
+    expect(getter).toHaveBeenCalledTimes(2);
+  });
+});
+```
+
+- 使用 ReactiveEffect 对象传入 getter 和 scheduler
+- 当触发响应式对象的 trigger 时，有 scheduler 的话就不允许 run
+- 防止自动运行 run()，也就是达到，缓存性，没有调用 computedRefImpl#get 的时候不会拿新的值
+- 若不使用 ReactiveEffect 去传入 getter 的话，getter 里面的响应式对象若 set 的话，会导致对应 depsMap 找不到对应的依赖从而报错。
+
+```typescript
+class ComputedRefImpl {
+  private _getter: any;
+  private _drity: boolean = true;
+  private _value: any;
+  private _effect: ReactiveEffect;
+  constructor(getter) {
+    // 使用ReactiveEffect对象传入getter和scheduler
+    // 当触发响应式对象的trigger时，有scheduler的话就不允许run
+    // 防止自动运行run()，也就是达到，缓存性，没有调用computedRefImpl#get的时候不会拿新的值
+    this._effect = new ReactiveEffect(getter, () => {
+      if (!this._drity) {
+        this._drity = true;
+      }
+    });
+    this._getter = this._effect;
+  }
+  get value() {
+    if (this._drity) {
+      this._drity = false;
+      this._value = this._getter.run();
+      return this._value;
+    }
+    return this._value;
+  }
+}
+export function computed(getter) {
+  return new ComputedRefImpl(getter);
+}
+```
