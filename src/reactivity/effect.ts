@@ -96,7 +96,7 @@ export function trackEffects(dep) {
 // 触发依赖
 export function trigger(target, key) {
   const depsMap = targetsMap.get(target);
-  // 若没有，说明当前没有对应依赖
+  
   if (!depsMap) return;
   const dep = depsMap.get(key);
   triggerEffects(dep);

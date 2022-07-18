@@ -2116,3 +2116,254 @@ export function computed(getter) {
   return new ComputedRefImpl(getter);
 }
 ```
+
+## 实现初始化 component 主流程
+
+首先创建个 createApp 函数，返回值是一个对象且这个对象有 mount 方法进行挂载节点。
+
+```typescript
+// 传入APP组件
+export function createApp(rootComponent) {
+  return {
+    mount(rootContainer) {
+      // 先转为VNode
+      // component -> vNode
+      // 未来的所有逻辑操作，都基于这个VNode
+
+      const vnode = createVNode(rootComponent);
+
+      render(vnode, rootContainer);
+    },
+  };
+}
+```
+
+创建个`vnode.ts` 新建`createVNode`函数来创建虚拟节点。
+
+```typescript
+export function createVNode(type, props?, children?) {
+  return {
+    type,
+    props,
+    children,
+  };
+}
+```
+
+创建个`h.ts` 新建`h`函数
+
+```typescript
+export function h(type, props?, children?) {
+  return createVNode(type, props, children);
+}
+```
+
+h 函数是帮助创建虚拟节点的。
+
+创建`component.ts`构建组件的行为
+
+```typescript
+/* 创建组件实例 */
+export function createComponentInstance(vnode: any) {
+  const component = {
+    vnode,
+    type: vnode.type,
+  };
+  return component;
+}
+
+export function setupComponent(instance) {
+  // TODO
+  // initProps
+  // initSlots
+  setupStatefulComponent(instance);
+}
+function setupStatefulComponent(instance: any) {
+  const Component = instance.type;
+
+  const { setup } = Component;
+
+  // 有可能用户没有写setup
+  if (setup) {
+    // function -> render
+    // Object  -> 注入到当前组件的上下文中
+    const setupResult = setup();
+
+    handleSetupResult(instance, setupResult);
+  }
+}
+function handleSetupResult(instance, setupResult: any) {
+  // function Object
+  // TODO function
+
+  if (typeof setupResult === "object") {
+    instance.setupState = setupResult;
+  }
+
+  finishComponentSetup(instance);
+}
+
+function finishComponentSetup(instance: any) {
+  const Component = instance.type;
+  /*   最后将组件的render方法挂在组件实例身上 */
+  if (Component.render) {
+    instance.render = Component.render;
+  }
+}
+```
+
+创建`renderer.ts`渲染器函数,vnode 渲染到真实 dom 需要这个函数
+
+```typescript
+import { isObject } from "./../shared/index";
+import { createComponentInstance, setupComponent } from "./component";
+
+export function render(vnode, container) {
+  // patch
+  patch(vnode, container);
+}
+function patch(vnode: any, container: any) {
+  //去处理组件
+  console.log("vnode : ");
+  console.log(vnode);
+
+  // 判断是不是element
+  if (typeof vnode.type === "string") {
+    processElement(vnode, container);
+  } else if (typeof vnode.type === "object") {
+    processComponent(vnode, container);
+  }
+}
+function processElement(vnode: any, container: any) {
+  mountElement(vnode, container);
+}
+function mountElement(vnode: any, container: any) {
+  const el = document.createElement(vnode.type);
+
+  const { children, props } = vnode;
+  if (typeof children === "string") {
+    el.textContent = children;
+  } else {
+    children.forEach((item) => {
+      if (isObject(item)) {
+        patch(item, el);
+      }
+    });
+  }
+
+  for (const key in props) {
+    const val = props[key];
+    el.setAttribute(key, val);
+  }
+  container.append(el);
+}
+function processComponent(vnode: any, container: any) {
+  mountComponent(vnode, container);
+}
+
+function mountComponent(vnode: any, container: any) {
+  const instance = createComponentInstance(vnode);
+
+  setupComponent(instance);
+  setupRenderEffect(instance, container);
+}
+function setupRenderEffect(instance: any, container) {
+  const subTree = instance.render();
+  console.log("instance");
+  console.log(instance);
+  patch(subTree, container);
+}
+```
+
+## 使用 rollup
+
+构建 ts 项目，生成 esm.js
+
+安装
+
+```shell
+yarn add rollup --dev
+yarn add tslib --dev
+yarn add @rollup/plugin-typescrip --dev
+```
+
+创建`rollup.config.js`
+
+```js
+import typescript from "@rollup/plugin-typescript";
+import pkg from "./package.json";
+export default {
+  input: "./src/index.ts",
+  output: [
+    {
+      format: "cjs",
+      file: pkg.main,
+    },
+    {
+      format: "es",
+      file: pkg.module,
+    },
+  ],
+  plugins: [typescript()],
+};
+```
+
+修改`package.json`
+
+```json
+  "main": "lib/mini-vue.cjs.js",
+  "module": "lib/mini-vue.esm.js",
+  "scripts": {
+    "test": "jest",
+    "build": "rollup -c rollup.config.js"
+  },
+```
+
+运行`yarn build --watch`实时构建
+
+最后将生成的`esm.js`导入到`index.html`，里面有个`main.js`和`App.js`
+
+```js
+import { h } from "../../lib/mini-vue.esm.js";
+export const App = {
+  render() {
+    return h(
+      "div",
+      {
+        id: "one",
+      },
+      [
+        h(
+          "div",
+          {
+            class: "red",
+          },
+          "p1"
+        ),
+        h(
+          "div",
+          {
+            class: "blue",
+          },
+          "p2"
+        ),
+      ]
+    );
+  },
+
+  setup() {
+    return {
+      msg: "mini-vue",
+    };
+  },
+};
+```
+
+```js
+import { createApp } from "../../lib/mini-vue.esm.js";
+import { App } from "./App.js";
+const app = document.querySelector("#app");
+createApp(App).mount(app);
+```
+
+初步完成运行时环境
