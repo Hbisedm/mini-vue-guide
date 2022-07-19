@@ -2367,3 +2367,102 @@ createApp(App).mount(app);
 ```
 
 初步完成运行时环境
+
+## 实现组件代理对象
+
+vue3 中的 render()会碰到`this.$el`或者`this.xxx`setup 函数返回的值
+
+```typescript
+function setupStatefulComponent(instance: any) {
+  const Component = instance.type;
+  /* 实现个代理对象 */
+  instance.proxy = new Proxy({ _: instance }, PublicInstanceHandles);
+  const { setup } = Component;
+  // 有可能用户没有写setup
+  if (setup) {
+    // function -> render
+    // Object  -> 注入到当前组件的上下文中
+    const setupResult = setup();
+    handleSetupResult(instance, setupResult);
+  }
+}
+```
+
+创建个`componentPublicInstance`具体实现 Proxy 的 get handler
+
+```ts
+const publicPropertiesMap = {
+  $el: (i) => i.vnode.el,
+};
+export const PublicInstanceHandles = {
+  get({ _: instance }, key) {
+    /* setupState */
+    const { setupState } = instance;
+    if (key in setupState) {
+      return setupState[key];
+    }
+    /* this.$el ... */
+    /*     if (key === "$el") {
+      return instance.el;
+    } */
+    /*     if (key in publicPropertiesMap) {
+      return publicPropertiesMap[key](instance);
+    } */
+    const publicGetter = publicPropertiesMap[key];
+    if (publicGetter) {
+      return publicGetter(instance);
+    }
+  },
+};
+```
+
+```ts
+function mountElement(vnode: any, container: any) {
+  /* 将当前元素的真实el挂载到vnode的el属性 */
+  const el = (vnode.el = document.createElement(vnode.type));
+
+  const { children, props } = vnode;
+  if (typeof children === "string") {
+    el.textContent = children;
+  } else {
+    children.forEach((item) => {
+      if (isObject(item)) {
+        patch(item, el);
+      }
+    });
+  }
+
+  for (const key in props) {
+    const val = props[key];
+    el.setAttribute(key, val);
+  }
+  container.append(el);
+}
+function setupRenderEffect(instance: any, initialVNode, container) {
+  const { proxy } = instance;
+  const subTree = instance.render.call(proxy);
+  patch(subTree, container);
+  /* 组件对应的根element元素遍历后赋予组件实例对象的vnode属性的el属性 */
+  initialVNode.el = subTree.el;
+}
+```
+
+```ts
+/* 这里拿到真实dom */
+const publicPropertiesMap = {
+  $el: (i) => i.vnode.el,
+};
+```
+
+> 这里的解构赋值 转化有点理解不太来
+> 这样的写法，代码可读性高了许多
+
+```ts
+instance.proxy = new Proxy({ _: instance }, PublicInstanceHandles);
+
+export const PublicInstanceHandles = {
+  get({ _: instance }, key) {
+    // 代码块里面拿到instance，就是组件实例对象。
+  },
+};
+```
