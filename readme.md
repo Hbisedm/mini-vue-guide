@@ -2466,3 +2466,113 @@ export const PublicInstanceHandles = {
   },
 };
 ```
+
+## 加入 shapeFlag
+
+每次判断当前 vnode 是组件还是元素，这步判断抽离成 flag 对象，为了提高性能，可以通过位运算来判断。
+新建`ShapeFlags.ts`来抽离当前 vnode 的类型和它的 children 的
+
+```ts
+/*
+ShapeFlags = {
+  element: true or false,
+  stateful: true or false,
+  ...
+}
+*/
+export const enum ShapeFlags {
+  ELEMENT = 1,
+  STATEFUL_COMPONENT = 1 << 1,
+  TEXT_CHILDREN = 1 << 2,
+  ARRAY_CHILDREN = 1 << 3,
+}
+```
+
+`vnode.ts`
+
+```ts
+import { ShapeFlags } from "./ShapeFlags";
+
+export function createVNode(type, props?, children?) {
+  const vnode = {
+    type,
+    props,
+    children,
+    el: null,
+    shapeFlag: getShapeFlag(type),
+  };
+
+  if (typeof children === "string") {
+    vnode.shapeFlag |= ShapeFlags.TEXT_CHILDREN;
+  } else if (typeof Array.isArray(children)) {
+    vnode.shapeFlag |= ShapeFlags.ARRAY_CHILDREN;
+  }
+
+  return vnode;
+}
+
+function getShapeFlag(type) {
+  if (typeof type === "string") {
+    return ShapeFlags.ELEMENT;
+  } else {
+    return ShapeFlags.STATEFUL_COMPONENT;
+  }
+}
+```
+
+这样就将 vnode 和 children 的类型都可以清楚知道了。在需要判断的时候，使用逻辑与运算即可。
+如渲染器的 patch 方法
+
+```ts
+function patch(vnode: any, container: any) {
+  // 判断是不是element
+  if (vnode.shapeFlag & ShapeFlags.ELEMENT) {
+    processElement(vnode, container);
+  } else if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
+    processComponent(vnode, container);
+  }
+}
+```
+
+## 实现事件绑定
+
+在 vnode 的 props 传入事件函数，如何把回调绑定到真实节点呢
+
+```js
+      {
+        id: "one",
+        onClick: () => console.log("click"),
+      }
+```
+
+在渲染器的 mountElement 函数中判断当前的 props 的 key, 使用正则表达式判断是不是事件的 key
+
+```ts
+function mountElement(vnode: any, container: any) {
+  const el = (vnode.el = document.createElement(vnode.type));
+
+  const { children, props, shapeFlag } = vnode;
+  if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
+    el.textContent = children;
+  } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+    children.forEach((item) => {
+      if (isObject(item)) {
+        patch(item, el);
+      }
+    });
+  }
+
+  const isOn = (eventName) => /^on[A-Z]/.test(eventName);
+
+  for (const key in props) {
+    const val = props[key];
+    if (isOn(key)) {
+      const eventName = key.slice(2).toLowerCase();
+      el.addEventListener(eventName, val);
+    } else {
+      el.setAttribute(key, val);
+    }
+  }
+  container.append(el);
+}
+```

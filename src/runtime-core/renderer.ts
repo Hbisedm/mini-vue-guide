@@ -1,5 +1,6 @@
 import { isObject } from "./../shared/index";
 import { createComponentInstance, setupComponent } from "./component";
+import { ShapeFlags } from "./ShapeFlags";
 
 export function render(vnode, container) {
   // patch
@@ -11,9 +12,11 @@ function patch(vnode: any, container: any) {
   console.log(vnode);
 
   // 判断是不是element
-  if (typeof vnode.type === "string") {
+  // if (typeof vnode.type === "string") {
+  if (vnode.shapeFlag & ShapeFlags.ELEMENT) {
     processElement(vnode, container);
-  } else if (typeof vnode.type === "object") {
+    // } else if (typeof vnode.type === "object") {
+  } else if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
     processComponent(vnode, container);
   }
 }
@@ -23,10 +26,11 @@ function processElement(vnode: any, container: any) {
 function mountElement(vnode: any, container: any) {
   const el = (vnode.el = document.createElement(vnode.type));
 
-  const { children, props } = vnode;
-  if (typeof children === "string") {
+  const { children, props, shapeFlag } = vnode;
+  // if (typeof children === "string") {
+  if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
     el.textContent = children;
-  } else {
+  } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
     children.forEach((item) => {
       if (isObject(item)) {
         patch(item, el);
@@ -34,9 +38,16 @@ function mountElement(vnode: any, container: any) {
     });
   }
 
+  const isOn = (eventName) => /^on[A-Z]/.test(eventName);
+
   for (const key in props) {
     const val = props[key];
-    el.setAttribute(key, val);
+    if (isOn(key)) {
+      const eventName = key.slice(2).toLowerCase();
+      el.addEventListener(eventName, val);
+    } else {
+      el.setAttribute(key, val);
+    }
   }
   container.append(el);
 }
