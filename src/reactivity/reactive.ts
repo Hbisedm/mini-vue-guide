@@ -1,3 +1,4 @@
+import { isObject } from "./../shared/index";
 import {
   mutableHandlers,
   readonlyHandlers,
@@ -13,8 +14,12 @@ export function reactive(raw) {
 export function readonly(raw) {
   return createActivityObj(raw, readonlyHandlers);
 }
-function createActivityObj(raw: any, baseHandlers: any) {
-  return new Proxy(raw, baseHandlers);
+function createActivityObj(target: any, baseHandlers: any) {
+  if (!isObject(target)) {
+    console.warn(`target: ${target} no a object`);
+    return target;
+  }
+  return new Proxy(target, baseHandlers);
 }
 export function isReactive(raw) {
   return !!raw[ReactiveFlags.IS_REACTIVE];

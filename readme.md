@@ -2576,3 +2576,123 @@ function mountElement(vnode: any, container: any) {
   container.append(el);
 }
 ```
+
+## 实现组件 props 的功能
+
+- `setup`接受一个 props 参数
+- `render`函数 this.xxx 可以拿到 props 的 key
+- props 是 readonly
+
+写个新组件`foo`
+
+```js
+import { h } from "../../lib/mini-vue.esm.js";
+
+export const Foo = {
+  setup(props) {
+    // props.count
+    console.log(props);
+    // readonly
+    props.count++;
+    console.log(props);
+  },
+  render() {
+    return h("div", {}, "foo:" + this.count);
+  },
+};
+```
+
+App.js
+
+```js
+render() {
+  return h('div', {}, [
+    h(Foo, {count:1})
+  ])
+}
+```
+
+这里传入一个 props 对象 `{count: 1}`
+
+```ts
+export function setupComponent(instance) {
+  // 初始化props
+  initProps(instance, instance.vnode.props);
+  setupStatefulComponent(instance);
+}
+function setupStatefulComponent(instance: any) {
+  const Component = instance.type;
+
+  instance.proxy = new Proxy({ _: instance }, PublicInstanceHandles);
+
+  const { setup } = Component;
+
+  // 有可能用户没有写setup
+  if (setup) {
+    // function -> render
+    // Object  -> 注入到当前组件的上下文中
+    const setupResult = setup(instance.props);
+
+    handleSetupResult(instance, setupResult);
+  }
+}
+```
+
+`componentProps.ts`
+
+```ts
+export function initProps(componentInstance, rawProps) {
+  componentInstance.props = rawProps || {};
+}
+```
+
+在`component.ts`中先初始化个 props，接着 setup 函数传入 props
+这里实现了第一个功能点： setup 传入参数
+
+在 renderer 渲染器中,setupRenderEffect 函数组件实例 render 函数是被组件实例的 proxy call
+所以在 proxy 的 get 方法中找 key 是否有在 props 中即可
+
+```ts
+function setupRenderEffect(instance: any, initialVNode, container) {
+  const { proxy } = instance;
+  const subTree = instance.render.call(proxy);
+  console.log("instance");
+  console.log(instance);
+  patch(subTree, container);
+  /* 组件对应的根element元素遍历后赋予真实$el */
+  initialVNode.el = subTree.el;
+}
+```
+
+组件实例代理的 get 逻辑代码
+
+```ts
+if (hasOwn(setupState, key)) {
+  return setupState[key];
+} else if (hasOwn(props, key)) {
+  return props[key];
+}
+```
+
+其中 hasOwn 是来自 shared/index.ts
+
+```ts
+export const hasOwn = (thisObj, key) =>
+  Object.prototype.hasOwnProperty.call(thisObj, key);
+```
+
+完成第二个功能点。
+
+vue3 中 props 是不可写的，这里可以借助响应式对象的 shallowReadonly 函数，将 setup 函数调用时的 props 参数进行包裹一层
+
+```ts
+if (setup) {
+  // function -> render
+  // Object  -> 注入到当前组件的上下文中
+  const setupResult = setup(shallowReadonly(instance.props));
+
+  handleSetupResult(instance, setupResult);
+}
+```
+
+完成第三个功能点
