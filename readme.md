@@ -2696,3 +2696,115 @@ if (setup) {
 ```
 
 完成第三个功能点
+
+## 实现组件 emit 功能
+
+子组件 emit 发送事件给父组件`on + eventName`
+
+```ts
+  setup(props, { emit }) {
+    // props.count
+    console.log(props);
+    // readonly
+    props.count++;
+    console.log(props);
+    const emitAdd = () => {
+      console.log("emitAdd handler");
+      emit("add", 1, 2);
+      emit("add-foo", 3);
+    };
+    return {
+      emitAdd,
+    };
+  },
+```
+
+setup 传入第二个参数，参数是个对象类型，里面含有 emit
+
+```ts
+        h(Foo, {
+          count: 1,
+          onAdd: (a, b) => {
+            console.log("on Add");
+            console.log("args", a, b);
+          },
+          onAddFoo: (a) => {
+            console.log("onAddFoo");
+            console.log(a);
+          },
+        }),
+```
+
+父组件 props 属性加入 onAdd、onAddFoo 方法
+
+需要做的是将子组件的传入的事件名、参数 传入到父组件 props 的事件属性和参数
+
+先在 component#setupStatefulComponent 的 setup 函数调用传入 emit
+
+```ts
+function setupStatefulComponent(instance: any) {
+  const Component = instance.type;
+
+  instance.proxy = new Proxy({ _: instance }, PublicInstanceHandles);
+
+  const { setup } = Component;
+
+  // 有可能用户没有写setup
+  if (setup) {
+    // function -> render
+    // Object  -> 注入到当前组件的上下文中
+    const setupResult = setup(shallowReadonly(instance.props), {
+      emit: instance.emit,
+    });
+
+    handleSetupResult(instance, setupResult);
+  }
+}
+```
+
+这个 emit 在组件实例对象定义，里面的 emit 函数抽到`componentEmit.ts`内
+
+```ts
+export function createComponentInstance(vnode: any) {
+  const component = {
+    vnode, // 组件实例的虚拟节点
+    type: vnode.type, // 组件实例的name, 因为这个type就是组件
+    setupState: {},
+    props: {},
+    emit: () => {},
+  };
+  // thisArg是null或undefined，执行作用域的 this 将被视为新函数的 thisArg。
+  // component是component#emit的第一个参数
+  component.emit = emit.bind(null, component) as () => void;
+  return component;
+}
+```
+
+`componentEmit.ts`
+
+```ts
+export function emit(instance, event, ...args) {
+  console.table("instance", instance);
+  console.log("emit", event);
+  const { props } = instance;
+  //TPP
+  const handler = props[toHandlerKey(camelize(event))];
+  handler && handler(...args);
+}
+```
+
+这里抽离出 转为事件 key-toHandlerKey 转为驼峰-camelize 事件 key 第一个字符转大写-capitalize
+
+```ts
+export const camelize = (str: string) => {
+  return str.replace(/-(\w)/g, (_, a: string) => {
+    return a ? a.toUpperCase() : "";
+  });
+};
+export const capitalize = (str: string) => {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+export const toHandlerKey = (str: string) => {
+  return "on" + capitalize(str);
+};
+```

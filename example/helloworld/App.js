@@ -9,12 +9,20 @@ export const App = {
       "div",
       {
         id: "one",
-        onClick: () => console.log("click"),
+        // onClick: () => console.log("click"),
       },
       [
         h("div", { class: "red" }, "p1"),
         h(Foo, {
           count: 1,
+          onAdd: (a, b) => {
+            console.log("on Add");
+            console.log("args", a, b);
+          },
+          onAddFoo: (a) => {
+            console.log("onAddFoo");
+            console.log(a);
+          },
         }),
       ]
       // "hello " + this.msg

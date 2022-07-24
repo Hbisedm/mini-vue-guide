@@ -2,12 +2,20 @@ import { isObject } from "./../shared/index";
 import { createComponentInstance, setupComponent } from "./component";
 import { ShapeFlags } from "./ShapeFlags";
 
+/**
+ * 处理第一个App
+ * @param vnode
+ * @param container
+ */
 export function render(vnode, container) {
   // patch
   patch(vnode, container);
 }
+/*
+处理elememt与component的虚拟节点
+*/
 function patch(vnode: any, container: any) {
-  //去处理组件
+  //去处理
   console.log("vnode : ");
   console.log(vnode);
 
@@ -38,6 +46,11 @@ function mountElement(vnode: any, container: any) {
     });
   }
 
+  /**
+   * 判断是不是事件处理
+   * @param eventName 事件名
+   * @returns
+   */
   const isOn = (eventName) => /^on[A-Z]/.test(eventName);
 
   for (const key in props) {
