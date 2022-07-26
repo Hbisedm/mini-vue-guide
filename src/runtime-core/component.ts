@@ -2,6 +2,7 @@ import { shallowReadonly } from "../reactivity/reactive";
 import { emit } from "./componentEmit";
 import { initProps } from "./componentProps";
 import { PublicInstanceHandles } from "./componentPublicInstance";
+import { initSlots } from "./componentSlots";
 /* 创建组件实例 */
 export function createComponentInstance(vnode: any) {
   const component = {
@@ -9,6 +10,7 @@ export function createComponentInstance(vnode: any) {
     type: vnode.type, // 组件实例的name, 因为这个type就是组件
     setupState: {},
     props: {},
+    slots: {},
     emit: () => {},
   };
   // thisArg是null或undefined，执行作用域的 this 将被视为新函数的 thisArg。
@@ -20,7 +22,7 @@ export function createComponentInstance(vnode: any) {
 export function setupComponent(instance) {
   // TODO
   initProps(instance, instance.vnode.props);
-  // initSlots
+  initSlots(instance, instance.vnode.children);
   setupStatefulComponent(instance);
 }
 function setupStatefulComponent(instance: any) {

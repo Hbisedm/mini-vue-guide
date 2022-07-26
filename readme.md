@@ -2808,3 +2808,151 @@ export const toHandlerKey = (str: string) => {
   return "on" + capitalize(str);
 };
 ```
+
+## 组件的 slots
+
+- 具名插槽
+- 作用域插槽
+
+App.js
+
+```js
+const fooSlotObj = h(
+  Foo,
+  {
+    count: 1,
+  },
+  h("p", {}, "Obj Slots 插槽")
+);
+```
+
+Foo.js
+
+```js
+render() {
+
+   return h("div", {}, [
+      renderSlots(this.$slots),
+    ]);
+}
+
+```
+
+- 需要可以拿到 this.$slots
+- renderSlots 的实现抽出来，也就是创建虚拟节点
+
+```js
+/* PublicInstanceHandles中增加代理`$slots`、组件实例对象增加`slots`属性
+组件实例对象的`slots`属性的定义 initSlots 创建个`componentSlots.ts`进行实现， 保证单一原则 */
+
+export function initSlots(instance, children) {
+  instance.slots = children;
+}
+```
+
+可以实现当 slot 为一个值的时候
+但如果是个数组，上面的方法就需求改进了
+
+```js
+const fooSlotArr = h(
+  Foo,
+  {
+    count: 1,
+  },
+  [h("p", {}, " Slot Array 1"), h("p", {}, "Slot Array 2")]
+);
+```
+
+```js
+export function initSlots(instance, children) {
+  instance.slots = Array.isArray(children) ? children : [children];
+}
+export function renderSlots(slots: Object) {
+  return createVNode("div", {}, slots);
+}
+```
+
+具名插槽的实现
+
+1. 具体指定位置
+2. 具体内容
+
+定义的时候，传入参数 name 指定位置(子组件)
+
+使用的时候，传入参数，指定内容(父组件)
+
+作用域插槽的实现(子组件传递给父组件值)
+写成函数的形式，调用时传入值。
+
+App.js
+
+```js
+const fooSlotHasName = h(
+  Foo,
+  {
+    count: 1,
+  },
+  {
+    header: ({ age }) => {
+      return h("p", {}, " Slot Array 1 get slot age: " + age);
+    },
+    footer: () => h("p", {}, "Slot Array 2"),
+  }
+);
+```
+
+Foo.js
+
+```js
+return h("div", {}, [
+  renderSlots(this.$slots, "header", { age }),
+  foo,
+  renderSlots(this.$slots, "footer"),
+]);
+```
+
+修改`renderSlots`
+这里拿到函数，才可以将子组件的值传过去给父组件
+
+```ts
+export function renderSlots(slots: Object, name: string, props) {
+  let slot = slots[name];
+  if (slot) {
+    if (typeof slot === "function") {
+      const vnode = createVNode("div", {}, slot(props));
+      return vnode;
+    }
+  }
+}
+```
+
+`initProps`修改为函数运行的方式，使得 renderSlot 拿到的是函数的形式
+
+```ts
+function normalizeObjectSlots(children: any, slots: any) {
+  // let slots = {};
+  if (children)
+    for (let key in children) {
+      // footer: () => h("p", {}, "Slot Array 2"),
+      const value = children[key]; //这里value是父组件定义的 () => h() 箭头函数
+      slots[key] = (props) => normalizeSlotValue(value(props));
+    }
+  // instance.slots = slots;
+}
+
+function normalizeSlotValue(value) {
+  return Array.isArray(value) ? value : [value];
+}
+
+export function initSlots(instance, children) {
+  //   instance.slots = Array.isArray(children) ? children : [children];
+  // 判断当前组件是不是含有slot
+  const { vnode } = instance;
+  if (vnode.shapeFlag & ShapeFlags.SLOT_CHILDREN) {
+    normalizeObjectSlots(children, instance.slots);
+  }
+}
+```
+
+
+![](https://raw.githubusercontent.com/Hbisedm/my-blob-picGo/main/img/202207262256920.png)
