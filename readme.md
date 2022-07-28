@@ -2954,5 +2954,100 @@ export function initSlots(instance, children) {
 }
 ```
 
-
+https://vue-next-template-explorer.netlify.app/
+这个网址查看 template 转换后的 h 函数
 ![](https://raw.githubusercontent.com/Hbisedm/my-blob-picGo/main/img/202207262256920.png)
+
+## 实现 Fragment 和 Text 类型节点
+
+> 上一个小节实现的 slots 生成后的真实节点，有个问题，会多个 div 标签一层。
+
+原来的渲染，是通过创建个 div 的虚拟节点，那么使用个 Fragment 中间变量，接着在 patch 方法里面做判断
+
+`vnode.ts`
+
+```ts
+export const Fragment = Symbol("Fragment");
+```
+
+`renderSlots.ts`
+
+```ts
+const vnode = createVNode(Fragment, {}, slot(props));
+```
+
+`renderer.ts`渲染器函数内添加`processFragment`函数，目的是直接渲染 vnode 的 children
+
+```ts
+function patch(vnode: any, container: any) {
+  //去处理
+  console.log("vnode : ");
+  console.log(vnode);
+  const { type, shapeFlag } = vnode;
+  switch (type) {
+    case Fragment:
+      processFragment(vnode, container);
+      break;
+
+    case Text:
+      processText(vnode, container);
+      break;
+    default:
+      // 判断是不是element
+      // if (typeof vnode.type === "string") {
+      if (shapeFlag & ShapeFlags.ELEMENT) {
+        processElement(vnode, container);
+        // } else if (typeof vnode.type === "object") {
+      } else if (shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
+        processComponent(vnode, container);
+      }
+      break;
+  }
+}
+// 渲染节点直接
+function processFragment(vnode: any, container: any) {
+  mountChildren(vnode, container);
+}
+```
+
+`App.js`内使用 text 节点等于下面这样写法
+
+```html
+<component>你好啊</component>
+```
+
+```ts
+{
+        header: ({ age }) => {
+          return h("p", {}, " Slot Array 1 get slot age: " + age);
+        },
+        footer: () => [
+          h("p", {}, "Slot Array 2"),
+          h("div", {}, "div..."),
+          createTextVNode("hello text node..."),
+        ],
+   }
+```
+
+那么这样直接文本的节点如何处理呢
+
+`vnode.ts` 定义个 createTextVnode 方法里面将文本传入个 vnode 就行，一样调用创建虚拟节点的方法
+
+```ts
+export const Text = Symbol("Text");
+export function createTextVNode(text: string) {
+  return createVNode(Text, {}, text);
+}
+```
+
+`renderer.ts`渲染器内对 Text 的类型进行处理
+
+```ts
+function processText(vnode: any, container: any) {
+  const { children } = vnode;
+  const textNode = (vnode.el = document.createTextNode(children));
+  container.append(textNode);
+}
+```
+
+使用原生的 api 创建文本节点 接着挂载到指定的容器内即可

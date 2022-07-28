@@ -1,3 +1,4 @@
+import { Fragment, Text } from "./vnode";
 import { isObject } from "./../shared/index";
 import { createComponentInstance, setupComponent } from "./component";
 import { ShapeFlags } from "./ShapeFlags";
@@ -9,24 +10,49 @@ import { ShapeFlags } from "./ShapeFlags";
  */
 export function render(vnode, container) {
   // patch
+  console.log("render 正在执行 ---->");
   patch(vnode, container);
 }
 /*
-处理elememt与component的虚拟节点
+处理elememt、component、Fragment、Text的虚拟节点
 */
 function patch(vnode: any, container: any) {
   //去处理
-  console.log("vnode : ");
+  console.log("<---当前处理的vnode ");
   console.log(vnode);
-
-  // 判断是不是element
-  // if (typeof vnode.type === "string") {
-  if (vnode.shapeFlag & ShapeFlags.ELEMENT) {
-    processElement(vnode, container);
-    // } else if (typeof vnode.type === "object") {
-  } else if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
-    processComponent(vnode, container);
+  console.log("当前处理的vnode ----> ");
+  const { type, shapeFlag } = vnode;
+  switch (type) {
+    case Fragment:
+      processFragment(vnode, container);
+      break;
+    case Text:
+      processText(vnode, container);
+      break;
+    default:
+      // 判断是不是element
+      // if (typeof vnode.type === "string") {
+      if (shapeFlag & ShapeFlags.ELEMENT) {
+        processElement(vnode, container);
+        // } else if (typeof vnode.type === "object") {
+      } else if (shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
+        processComponent(vnode, container);
+      }
+      break;
   }
+}
+function processText(vnode: any, container: any) {
+  const { children } = vnode;
+  const textNode = (vnode.el = document.createTextNode(children));
+  container.append(textNode);
+}
+function processFragment(vnode: any, container: any) {
+  mountChildren(vnode, container);
+}
+function mountChildren(vnode, container) {
+  vnode.children.forEach((v) => {
+    patch(v, container);
+  });
 }
 function processElement(vnode: any, container: any) {
   mountElement(vnode, container);
@@ -54,9 +80,13 @@ function mountElement(vnode: any, container: any) {
   const isOn = (eventName) => /^on[A-Z]/.test(eventName);
 
   for (const key in props) {
+    console.log("<---- props ---->");
     const val = props[key];
     if (isOn(key)) {
       const eventName = key.slice(2).toLowerCase();
+      console.log("<---- addEventListener run ---->");
+      console.log(`eventName => ${eventName}, 
+      event handler func => ${val}`);
       el.addEventListener(eventName, val);
     } else {
       el.setAttribute(key, val);
@@ -80,6 +110,6 @@ function setupRenderEffect(instance: any, initialVNode, container) {
   console.log("instance");
   console.log(instance);
   patch(subTree, container);
-  /* 组件对应的根element元素遍历后赋予真实$el */
+  /** 组件对应的根element元素遍历后赋予真实$el */
   initialVNode.el = subTree.el;
 }

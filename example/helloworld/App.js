@@ -1,4 +1,5 @@
-import { h } from "../../lib/mini-vue.esm.js";
+import { h, createTextVNode } from "../../lib/mini-vue.esm.js";
+import { Bar } from "./Bar.js";
 import { Foo } from "./Foo.js";
 window.self;
 export const App = {
@@ -17,8 +18,8 @@ export const App = {
         console.log(a);
       },
     });
-    const fooSlotObj = h(
-      Foo,
+    const barSlotObj = h(
+      Bar,
       {
         count: 1,
       },
@@ -37,10 +38,15 @@ export const App = {
         count: 1,
       },
       {
-        header: ({ age }) => {
-          return h("p", {}, " Slot Array 1 get slot age: " + age);
-        },
-        footer: () => h("p", {}, "Slot Array 2"),
+        header: ({ age }) => [
+          h("p", {}, " Slot Array 1 get slot age: " + age),
+          h("div", {}, "Slot "),
+        ],
+        footer: () => [
+          h("p", {}, "Slot Array 2"),
+          h("div", {}, "div..."),
+          createTextVNode("hello text node..."),
+        ],
       }
     );
     const fooDefault = h(
@@ -60,7 +66,7 @@ export const App = {
         // id: "one",
         // onClick: () => console.log("click"),
       },
-      [app, fooSlotArr, fooSlotObj, fooSlotHasName, fooDefault]
+      [app, fooSlotArr, barSlotObj, fooSlotHasName, fooDefault]
       // [app, fooSlotArr, fooSlotObj, fooSlotHasName]
       // [app, fooSlotHasName]
       // "hello " + this.msg

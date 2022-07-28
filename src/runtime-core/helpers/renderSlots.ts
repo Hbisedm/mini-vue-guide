@@ -1,3 +1,4 @@
+import { Fragment } from "./../vnode";
 import { createVNode } from "../vnode";
 
 /**
@@ -10,7 +11,10 @@ export function renderSlots(slots: Object, name: string, props) {
   let slot = slots[name];
   if (slot) {
     if (typeof slot === "function") {
-      const vnode = createVNode("div", {}, slot(props));
+      console.log("slot 正在执行 -----------------------------------------");
+      console.log(slot(props));
+      console.log("slot 正在执行-----------------------------------------");
+      const vnode = createVNode(Fragment, {}, slot(props));
       return vnode;
     }
   }

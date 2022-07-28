@@ -36,8 +36,12 @@ function setupStatefulComponent(instance: any) {
   if (setup) {
     // function -> render
     // Object  -> 注入到当前组件的上下文中
-    const setupResult = setup(shallowReadonly(instance.props), {
-      emit: instance.emit,
+    const { props, emit } = instance;
+    console.log(`处理组件传入的props =>`);
+    console.log(props);
+    console.log(`<= 处理组件传入的props`);
+    const setupResult = setup(shallowReadonly(props), {
+      emit,
     });
 
     handleSetupResult(instance, setupResult);
