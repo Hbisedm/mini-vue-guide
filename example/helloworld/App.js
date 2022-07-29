@@ -1,4 +1,8 @@
-import { h, createTextVNode } from "../../lib/mini-vue.esm.js";
+import {
+  h,
+  createTextVNode,
+  getCurrentInstance,
+} from "../../lib/mini-vue.esm.js";
 import { Bar } from "./Bar.js";
 import { Foo } from "./Foo.js";
 window.self;
@@ -66,6 +70,7 @@ export const App = {
         // id: "one",
         // onClick: () => console.log("click"),
       },
+      // [h("p", {}, "currentInstance demo"), h(Foo)]
       [app, fooSlotArr, barSlotObj, fooSlotHasName, fooDefault]
       // [app, fooSlotArr, fooSlotObj, fooSlotHasName]
       // [app, fooSlotHasName]
@@ -90,6 +95,9 @@ export const App = {
   },
 
   setup() {
+    console.log("%c this is App setup ->", "color:red;font-size: 20px");
+    console.log(getCurrentInstance());
+    console.log("%c <- this is App setup", "color:red;font-size: 20px");
     return {
       msg: "mini-vue",
     };

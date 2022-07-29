@@ -3051,3 +3051,53 @@ function processText(vnode: any, container: any) {
 ```
 
 使用原生的 api 创建文本节点 接着挂载到指定的容器内即可
+
+## 实现 getCurrentInstance
+
+可以在组件实例的 setup 方法内拿到当前组件的实例
+
+`App.js`
+
+```js
+  setup() {
+    console.log("%c this is App setup ->", "color:red;font-size: 20px");
+    console.log(getCurrentInstance());
+    console.log("%c <- this is App setup", "color:red;font-size: 20px");
+    return {
+      msg: "mini-vue",
+    };
+  },
+
+```
+
+在`component.ts`声明个`getCurrentInstance`和当前模块的全局变量`currentInstance`
+
+```ts
+let currentInstance = null;
+export function getCurrentInstance() {
+  return currentInstance;
+}
+```
+
+当调用的 setup 方法时，先给`currentInstance`赋值，调用完毕后，再赋予`null`
+
+```ts
+可以使用个函数抽离出这个赋值过程;
+
+function setCurrentInstance(instance) {
+  currentInstance = instance;
+}
+
+function setupStatefulComponent(instance: any) {
+  //...
+  setCurrentInstance(instance);
+  const setupResult = setup(shallowReadonly(props), {
+    emit,
+  });
+  setCurrentInstance(null);
+  //...
+}
+```
+
+这样做的好处：可以方便后期调试错
+

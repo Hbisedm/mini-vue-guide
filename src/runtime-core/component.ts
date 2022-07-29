@@ -38,11 +38,15 @@ function setupStatefulComponent(instance: any) {
     // Object  -> 注入到当前组件的上下文中
     const { props, emit } = instance;
     console.log(`处理组件传入的props =>`);
+    console.log(instance);
+
     console.log(props);
     console.log(`<= 处理组件传入的props`);
+    setCurrentInstance(instance);
     const setupResult = setup(shallowReadonly(props), {
       emit,
     });
+    setCurrentInstance(null);
 
     handleSetupResult(instance, setupResult);
   }
@@ -63,4 +67,11 @@ function finishComponentSetup(instance: any) {
   if (Component.render) {
     instance.render = Component.render;
   }
+}
+let currentInstance = null;
+export function getCurrentInstance() {
+  return currentInstance;
+}
+function setCurrentInstance(instance) {
+  currentInstance = instance;
 }

@@ -1,11 +1,15 @@
-import { h, renderSlots } from "../../lib/mini-vue.esm.js";
+import { h, renderSlots, getCurrentInstance } from "../../lib/mini-vue.esm.js";
 
 export const Foo = {
+  name: "Foo",
   setup(props, { emit }) {
+    console.log("%c this is Foo setup ->", "color:blue;font-size: 20px");
+    console.log(getCurrentInstance());
+    console.log("%c <- this is Foo setup", "color:blue;font-size: 20px");
     // props.count
     console.log(props);
     // readonly
-    props.count++;
+    // props.count++;
     console.log(props);
     const emitAdd = () => {
       console.log("emitAdd handler");
