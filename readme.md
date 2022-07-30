@@ -3101,3 +3101,76 @@ function setupStatefulComponent(instance: any) {
 
 这样做的好处：可以方便后期调试错
 
+## 实现 provide inject
+
+```ts
+import { getCurrentInstance } from "./component";
+
+export function provide(key, value) {
+  const currentInstance: any = getCurrentInstance();
+  if (currentInstance) {
+    let { provides } = currentInstance;
+    /**
+     * 这里的初始化需要处理
+     * 第一次的时候，当前组件拿到是父级组件的provides
+     * 未来在调用时，就直接覆盖父级的
+     * 借用原型链的思想
+     */
+    const parentProvides = currentInstance.parent.provides;
+    if (provides === parentProvides) {
+      provides = currentInstance.provides = Object.create(parentProvides);
+    }
+    provides[key] = value;
+  }
+}
+
+export function inject(key, defaultValue) {
+  const currentInstance: any = getCurrentInstance();
+  const { provides } = currentInstance.parent;
+  if (key in provides) {
+    return provides[key];
+  } else if (defaultValue !== "") {
+    if (typeof defaultValue === "function") {
+      return defaultValue();
+    }
+    return defaultValue;
+  }
+}
+```
+
+创建组件实例的时候，拿到当前组件的父级组件的 provide
+第一次组件实例化的时候，他的 parent 是 undefined 的，因为第一次进来的时候是根组件
+
+```ts
+export function createComponentInstance(vnode: any, parent) {
+  console.log("parent ->", parent);
+  const component = {
+    vnode, // 组件实例的虚拟节点
+    type: vnode.type, // 组件实例的name, 因为这个type就是组件
+    setupState: {},
+    props: {},
+    slots: {},
+    provides: parent ? parent.provides : {},
+    parent,
+    emit: () => {},
+  };
+  // thisArg是null或undefined，执行作用域的 this 将被视为新函数的 thisArg。
+  // component是component#emit的第一个参数
+  component.emit = emit.bind(null, component) as () => void;
+  return component;
+}
+```
+
+父级组件的来源
+
+```ts
+function setupRenderEffect(instance: any, initialVNode, container) {
+  const { proxy } = instance;
+  const subTree = instance.render.call(proxy);
+  console.log("instance");
+  console.log(instance);
+  patch(subTree, container, instance); // ++这里的instance传入，也就是当前patch时的父组件实例
+  /** 组件对应的根element元素遍历后赋予真实$el */
+  initialVNode.el = subTree.el;
+}
+```

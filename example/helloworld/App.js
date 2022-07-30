@@ -70,8 +70,8 @@ export const App = {
         // id: "one",
         // onClick: () => console.log("click"),
       },
-      // [h("p", {}, "currentInstance demo"), h(Foo)]
-      [app, fooSlotArr, barSlotObj, fooSlotHasName, fooDefault]
+      [h("p", {}, "currentInstance demo"), fooEvent]
+      // [app, fooSlotArr, barSlotObj, fooSlotHasName, fooDefault]
       // [app, fooSlotArr, fooSlotObj, fooSlotHasName]
       // [app, fooSlotHasName]
       // "hello " + this.msg
