@@ -1,3 +1,4 @@
+import { proxyRefs } from "../reactivity";
 import { shallowReadonly } from "../reactivity/reactive";
 import { emit } from "./componentEmit";
 import { initProps } from "./componentProps";
@@ -14,6 +15,7 @@ export function createComponentInstance(vnode: any, parent) {
     slots: {},
     provides: parent ? parent.provides : {},
     parent,
+    isMounted: false,
     emit: () => {},
   };
   // thisArg是null或undefined，执行作用域的 this 将被视为新函数的 thisArg。
@@ -59,7 +61,7 @@ function handleSetupResult(instance, setupResult: any) {
   // TODO function
 
   if (typeof setupResult === "object") {
-    instance.setupState = setupResult;
+    instance.setupState = proxyRefs(setupResult);
   }
 
   finishComponentSetup(instance);
