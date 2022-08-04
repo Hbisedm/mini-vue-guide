@@ -3174,3 +3174,98 @@ function setupRenderEffect(instance: any, initialVNode, container) {
   initialVNode.el = subTree.el;
 }
 ```
+
+## custom renderer
+
+将之前写的渲染器抽离出来抽象接口，然后创建`runtime-dom/index.ts` 表示默认使用 dom 的渲染函数去渲染虚拟 dom。
+将`runtime-core/renderer.ts`抽离`createRenderer`成闭包的形式
+
+- createElement
+- patchProp
+- insert
+
+主要渲染的三个接口
+
+这样做的好处：renderer 不需要关系具体实现，只需要调用传入的抽象接口即可了
+
+## 更新 element 的 prop
+
+在 processElement 函数中判断是否为更新，根据 oldNode 判断，因为初始化的时候 oldNode 肯定是没有的。
+初始化走 挂载方法
+更新走 更新方法
+
+进入更新方法后，判断 oldNode 和 newNode prop 属性的情况
+
+> 注意点：第一次初始化 vnode 是有 el，但是以后是没有 el 的，所以需要再这里更新的时候将 el 赋值过去
+
+然后执行`patchProps`，这里列举了 3 种情况
+
+1. prop 修改
+2. prop 删除 (value 为 undefined、null)
+3. prop 删除 (key 都没有)
+
+```js
+const onChangeProps1 = () => {
+  props.value.foo = "new-foo";
+};
+const onChangeProps2 = () => {
+  props.value.foo = undefined;
+};
+const onChangeProps3 = () => {
+  props.value = {
+    foo: "foo",
+  };
+};
+```
+
+需要对`runtime-dom`的渲染接口`patchProp`的具体进行修改,以为只考虑增加，没有考虑删除的情况。
+修改后为：
+
+```ts
+function patchProp(el, key, oldVal, nextVal) {
+  const isOn = (eventName) => /^on[A-Z]/.test(eventName);
+  if (isOn(key)) {
+    const eventName = key.slice(2).toLowerCase();
+    el.addEventListener(eventName, nextVal);
+  } else {
+    if (nextVal === undefined || nextVal === null) {
+      el.removeAttribute(key); //删除的情况
+    } else {
+      el.setAttribute(key, nextVal);
+    }
+  }
+}
+```
+
+```ts
+function processElement(n1, n2: any, container: any, parentComponent) {
+  if (!n1) {
+    mountElement(n2, container, parentComponent);
+  } else {
+    patchElement(n1, n2, container);
+  }
+}
+function patchElement(n1, n2, container) {
+  const oldProps = n1.props || EMPTY_OBJ;
+  const newProps = n2.props || EMPTY_OBJ;
+  const el = (n2.el = n1.el);
+  patchProps(el, oldProps, newProps);
+}
+function patchProps(el, oldProps, newProps) {
+  if (oldProps !== newProps) {
+    for (const key in newProps) {
+      const prevProp = oldProps[key];
+      const nextProp = newProps[key];
+      hostPatchProp(el, key, prevProp, nextProp);
+    }
+    // 第一次初始化的时候，不需要对比老节点
+    if (oldProps !== EMPTY_OBJ) {
+      for (const key in oldProps) {
+        if (!(key in newProps)) {
+          hostPatchProp(el, key, oldProps[key], null);
+        }
+      }
+    }
+  }
+}
+```

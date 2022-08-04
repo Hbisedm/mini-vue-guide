@@ -1,12 +1,16 @@
 import { Fragment, Text } from "./vnode";
-import { isObject } from "./../shared/index";
+import { EMPTY_OBJ, isObject } from "./../shared/index";
 import { createComponentInstance, setupComponent } from "./component";
 import { ShapeFlags } from "./ShapeFlags";
 import { createAppAPI } from "./createApp";
 import { effect } from "../reactivity/effect";
 
 export function createRenderer(options) {
-  const { createElement, patchProp, insert } = options;
+  const {
+    createElement: hostCreateElement,
+    patchProp: hostPatchProp,
+    insert: hostInsert,
+  } = options;
 
   /**
    * 处理第一个App
@@ -63,12 +67,36 @@ export function createRenderer(options) {
     if (!n1) {
       mountElement(n2, container, parentComponent);
     } else {
-      console.log("old", n1);
-      console.log("new", n2);
+      patchElement(n1, n2, container);
+    }
+  }
+  function patchElement(n1, n2, container) {
+    console.log("old", n1);
+    console.log("new", n2);
+    const oldProps = n1.props || EMPTY_OBJ;
+    const newProps = n2.props || EMPTY_OBJ;
+    const el = (n2.el = n1.el);
+    patchProps(el, oldProps, newProps);
+  }
+  function patchProps(el, oldProps, newProps) {
+    if (oldProps !== newProps) {
+      for (const key in newProps) {
+        const prevProp = oldProps[key];
+        const nextProp = newProps[key];
+        hostPatchProp(el, key, prevProp, nextProp);
+      }
+      // 第一次初始化的时候，不需要对比老节点
+      if (oldProps !== EMPTY_OBJ) {
+        for (const key in oldProps) {
+          if (!(key in newProps)) {
+            hostPatchProp(el, key, oldProps[key], null);
+          }
+        }
+      }
     }
   }
   function mountElement(vnode: any, container: any, parentComponent) {
-    const el = (vnode.el = createElement(vnode.type));
+    const el = (vnode.el = hostCreateElement(vnode.type));
 
     const { children, props, shapeFlag } = vnode;
     // if (typeof children === "string") {
@@ -101,10 +129,10 @@ export function createRenderer(options) {
       // } else {
       //   el.setAttribute(key, val);
       // }
-      patchProp(el, key, val);
+      hostPatchProp(el, key, null, val);
     }
     // container.append(el);
-    insert(el, container);
+    hostInsert(el, container);
   }
   function processComponent(n1, n2: any, container: any, parentComponent) {
     mountComponent(n2, container, parentComponent);
