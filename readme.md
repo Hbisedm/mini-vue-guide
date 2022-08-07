@@ -3269,3 +3269,114 @@ function patchProps(el, oldProps, newProps) {
   }
 }
 ```
+
+## 更新 Element 的 children
+
+- Array 2 Text
+  清空老的数组 加入新的文本节点
+- Text 2 Text
+  删除老的文本内容改为新的
+- Text 2 Array
+  删除老的文本内容 添加新的数组节点
+- Array 2 Array
+  - 双端对比法
+
+老的节点 与 新的节点
+
+- 老节点右侧少与新节点 (ab) (ab)c
+- 老节点左侧少与新节点 (ab) c(ab)
+- 老节点右侧多与新节点 (ab)c (ab)
+- 老节点左侧多与新节点 c(ab) (ab)
+- 乱序
+
+老节点少于新节点 => diff 后 新增节点
+老节点多于新节点 => diff 后 删除节点
+
+这里需要定义几个变量
+n1: 老节点
+n2: 新节点
+e1: 老节点的当前遍历的尾部指针
+e2: 新节点的当前遍历的尾部指针
+l1：老节点的长度
+l2：新节点的长度
+
+```ts
+function patchKeyedChildren(c1, c2, container, parentComponent, parentAnchor) {
+  const l1 = c1.length;
+  const l2 = c2.length;
+  let e1 = l1 - 1;
+  let e2 = l2 - 1;
+  let i = 0;
+
+  let isSameVNodeType = (n1, n2) => {
+    return n1.type === n2.type && n1.key === n2.key;
+  };
+
+  while (i <= e1 && i <= e2) {
+    const n1 = c1[i];
+    const n2 = c2[i];
+    if (isSameVNodeType(n1, n2)) {
+      patch(n1, n2, container, parentComponent, parentAnchor);
+    } else {
+      break;
+    }
+    i++;
+  }
+  console.log(i);
+  while (i <= e1 && i <= e2) {
+    const n1 = c1[e1];
+    const n2 = c2[e2];
+    if (isSameVNodeType(n1, n2)) {
+      patch(n1, n2, container, parentComponent, parentAnchor);
+    } else {
+      break;
+    }
+    e1--;
+    e2--;
+  }
+  console.log(e1);
+  console.log(e2);
+  /**
+   * 左侧or右侧添加
+   * 新的比老的多
+   * 无论是左侧还是右侧添加，双端检测后 i > e1
+   */
+  if (i > e1) {
+    /** 判断i是否小于新的最后指针 */
+    if (i <= e2) {
+      const nextPos = e2 + 1;
+      /**
+       * 判断要前插还是后插
+       * 通过找到锚点判断往前插入节点
+       * */
+      const anchor = nextPos < l2 ? c2[nextPos].el : null;
+      while (i <= e2) {
+        const n2 = c2[i];
+        patch(null, n2, container, parentComponent, anchor);
+        i++;
+      }
+    }
+  } else if (i > e2) {
+    /** 老的比新的多，删除 */
+    while (i <= e1) {
+      const n1 = c1[i].el;
+      hostRemove(n1);
+      i++;
+    }
+  }
+}
+```
+
+i 大于 e1 说明 老的比新的多
+需要判断往前添加还是往后添加
+这里需要改下`runtime dom` 里面 insert 方法
+
+```ts
+function insert(el, parent, anchor) {
+  // 加入锚点 目的是 往前面加入的时候，可以找个参考点，向它前面加入
+  parent.insertBefore(el, anchor || null);
+}
+```
+
+i 大于 e2 说明 新的比老的多
+删除对应节点即可

@@ -1,9 +1,10 @@
 import { createVNode } from "./vnode";
 
 export function createAppAPI(render) {
-  // 传入APP组件
+  // 传入APP组件                目的是创建根的虚拟节点
   return function createApp(rootComponent) {
     return {
+      /** rootContainer 根Dom节点 */
       mount(rootContainer) {
         // 先转为VNode
         // component -> vNode
