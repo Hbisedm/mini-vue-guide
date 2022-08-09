@@ -3272,6 +3272,8 @@ function patchProps(el, oldProps, newProps) {
 
 ## 更新 Element 的 children
 
+### 四种情况
+
 - Array 2 Text
   清空老的数组 加入新的文本节点
 - Text 2 Text
@@ -3279,26 +3281,30 @@ function patchProps(el, oldProps, newProps) {
 - Text 2 Array
   删除老的文本内容 添加新的数组节点
 - Array 2 Array
-  - 双端对比法
+  - 双端对比算法
+
+### 双端对比算法
 
 老的节点 与 新的节点
 
-- 老节点右侧少与新节点 (ab) (ab)c
-- 老节点左侧少与新节点 (ab) c(ab)
-- 老节点右侧多与新节点 (ab)c (ab)
-- 老节点左侧多与新节点 c(ab) (ab)
+- 老节点右侧少与新节点 (ab) | (ab)c
+- 老节点左侧少与新节点 (ab) | c(ab)
+- 老节点右侧多与新节点 (ab)c | (ab)
+- 老节点左侧多与新节点 c(ab) | (ab)
 - 乱序
 
-老节点少于新节点 => diff 后 新增节点
-老节点多于新节点 => diff 后 删除节点
+老节点数组少于新节点数组 => diff 后 新增节点
+
+老节点数组多于新节点数组 => diff 后 删除节点
 
 这里需要定义几个变量
-n1: 老节点
-n2: 新节点
-e1: 老节点的当前遍历的尾部指针
-e2: 新节点的当前遍历的尾部指针
-l1：老节点的长度
-l2：新节点的长度
+
+- n1: 当前的老节点
+- n2: 当前的新节点
+- e1: 老节点的当前遍历的尾部指针
+- e2: 新节点的当前遍历的尾部指针
+- l1：老节点的长度
+- l2：新节点的长度
 
 ```ts
 function patchKeyedChildren(c1, c2, container, parentComponent, parentAnchor) {
@@ -3380,3 +3386,213 @@ function insert(el, parent, anchor) {
 
 i 大于 e2 说明 新的比老的多
 删除对应节点即可
+
+#### 处理新老 children 中间的节点
+
+> 上面的处理只是处理了左右
+> 此时的 i、e1、e2 都是有用的 确定了中间要处理的范围。
+
+
+
+![image-20220809211518317](https://raw.githubusercontent.com/Hbisedm/my-blob-picGo/main/img/202208092115378.png)
+
+
+
+##### 处理中间的新节点的属性以及删除老节点
+
+> patch 方法可以重新计算相同节点的新属性
+>
+> 若 新节点没有的老节点就应该删除掉
+
+需要个变量`keyToNewIndexMap`拿到当前新数组中间里面的映射表
+
+```ts
+/** 得到新节点的map映射 */
+for (let i = s2; i <= e2; i++) {
+  const nextChild = c2[i];
+  keyToNewIndexMap.set(nextChild.key, i);
+}
+```
+
+作用: 判断老数组中是否有一样的 key，如果有说明新数组中的这个 vnode 是来自老数组中的。不需要创建，只需要 patch 即可。
+
+需要个变量`newIndex`表示当前遍历中，正常操作的下新数组的 vnode 索引下标
+
+```ts
+/** 新节点的下标 */
+let newIndex;
+/** 老节点的props有key的情况 */
+if (prevChild.key !== null) {
+  newIndex = keyToNewIndexMap.get(prevChild.key);
+} else {
+  // 遍历所有整个新数组，使用`isSameVNodeType`进行判断是不是同一个节点
+}
+```
+
+这里拿到 newIndex,然后对这个变量做判断
+
+```ts
+/**
+ * 若newIndex 为 undefined 说明 在新数组的keyToNewIndexMap中没有找到对应的索引
+ */
+if (newIndex === undefined) {
+  hostRemove(prevChild.el);
+} else {
+  /**
+   * 新旧节点进行patch,这里这是patch下，不会更换他的位置,patch只是改属性
+   */
+  patch(prevChild, c2[newIndex], container, parentComponent, null);
+  patched++;
+}
+```
+
+目前完成进度：
+
+- 做完这一步说明我们可以删除老数组中存在的，而新数组中没有的节点，以及 patch 下新老中都共同拥有的节点的新属性or新内容。
+- 还差新增新数组中的新节点，正确**移动**节点在新数组中的位置。
+
+##### 移动 与 新增
+
+需要个变量`toBePatched`去记录新数组中 中间还没处理的节点个数
+需要个映射表`newIndexToOldIndexMap`，代表新数组中间节点中，每个位置(从零开始)的节点是否来自旧数组
+
+- value若不是0，表示来自旧节点中的哪个索引
+- 0表示新创建的的逻辑意义
+
+```ts
+/**
+ * 初始化都是0,0是有逻辑意义的,代表着这个新节点在老节点中是没有的意义
+ */
+for (let i = 0; i < toBePatched; i++) {
+  newIndexToOldIndexMap[i] = 0;
+}
+```
+
+> [a, b, (c, d, e), f, g] 旧数组
+> 0, 1, (2, 3, 4), 5, 6  索引
+> [a, b, (e, c, d), f, g] 新数组
+> -------[0, 1, 2]---------- 从 0 开始
+> 生成的映射表`newIndexToOldIndexMap`就是
+> { 0: 4+1, 1: 2+1, 2: 3+1 }
+>
+> > 为何加 1 呢?
+> >
+> > 因为 0 可以代表这个新数组中某个节点在老数组中找不到，说明为 0 的情况就得生成出来，而不是移动节点
+
+```ts
+/**
+ * 若newIndex 为 undefined 说明 在新数组的keyToNewIndexMap中没有找到对应的索引
+ */
+if (newIndex === undefined) {
+  hostRemove(prevChild.el);
+} else {
+  /**
+   * 若一直是递增的话，就是 1, 2, 3
+   * 若里面改变了 就是 3, 1, 2 等同于 `newIndex < maxNewIndexSoFar` => 需要移动
+   */
+  if (newIndex >= maxNewIndexSoFar) {
+    maxNewIndexSoFar = newIndex;
+  } else {
+    moved = true;
+  }
+  /**
+   * 给newIndexToOldIndexMap填充值，
+   * 这里的＋1是为了防止i为0的情况，以为i为0的逻辑意义上面已经定死了。
+   */
+  newIndexToOldIndexMap[newIndex - s2] = i + 1;
+  /**
+   * 新旧节点进行patch,这里这是patch下，不会更换他的位置
+   */
+  patch(prevChild, c2[newIndex], container, parentComponent, null);
+  patched++;
+}
+```
+
+通过拿到生成的`newIndexToOldIndexMap`映射表，拿到他的最长递增子序列
+
+```ts
+/**
+ * 生成 最长递增子序列
+ * 这个newIndexToOldIndexMap映射表很重要
+ * 返回value为递增的索引数组
+ * getSequence([0: 5, 1: 3, 2: 4])
+ * 返回就是[1, 2]
+ * 判断需不需要moved，需要才是调用getSequence
+ */
+const increasingNewIndexSequence = moved
+  ? getSequence(newIndexToOldIndexMap)
+  : [];
+/** 最长递增子序列的结束索引 因为是索引索引要减一嘛 */
+let j = increasingNewIndexSequence.length - 1;
+for (let i = toBePatched - 1; i >= 0; i--) {
+  /** 找锚点，
+   * 如果是正序遍历的话，会造成锚点可能是个不确定的元素，
+   * 倒序就不会出现这个情况
+   */
+  const nextIndex = i + s2;
+  const nextChild = c2[nextIndex];
+  const anchor = nextIndex + 1 < l2 ? c2[nextIndex + 1].el : null;
+
+  /**
+   * 创建节点
+   */
+  if (newIndexToOldIndexMap[i] === 0) {
+    patch(null, nextChild, container, parentComponent, anchor);
+  }
+
+  /** 判断需要更换位置的情况下，才进行移动 */
+  if (moved) {
+    /** j < 0 说明 稳定的序列已经遍历完毕了，剩下的都是不稳定的序列 */
+    if (j < 0 || i !== increasingNewIndexSequence[j]) {
+      console.log("移动位置");
+      hostInsert(nextChild.el, container, anchor);
+    } else {
+      j--;
+    }
+  }
+}
+
+/**
+ * 生成最长递增子序列
+ */
+function getSequence(arr: number[]): number[] {
+  const p = arr.slice();
+  const result = [0];
+  let i, j, u, v, c;
+  const len = arr.length;
+  for (i = 0; i < len; i++) {
+    const arrI = arr[i];
+    if (arrI !== 0) {
+      j = result[result.length - 1];
+      if (arr[j] < arrI) {
+        p[i] = j;
+        result.push(i);
+        continue;
+      }
+      u = 0;
+      v = result.length - 1;
+      while (u < v) {
+        c = (u + v) >> 1;
+        if (arr[result[c]] < arrI) {
+          u = c + 1;
+        } else {
+          v = c;
+        }
+      }
+      if (arrI < arr[result[u]]) {
+        if (u > 0) {
+          p[i] = result[u - 1];
+        }
+        result[u] = i;
+      }
+    }
+  }
+  u = result.length;
+  v = result[u - 1];
+  while (u-- > 0) {
+    result[u] = v;
+    v = p[v];
+  }
+  return result;
+}
+```
