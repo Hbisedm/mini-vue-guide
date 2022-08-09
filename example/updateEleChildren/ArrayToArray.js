@@ -171,27 +171,42 @@ import { h, ref } from "../../lib/mini-vue.esm.js";
  * (ab)dcye(fg)
  * d节点在老的数组中不存在，新的里面存在
  */
+// const prevChildren = [
+//   h("div", { key: "A" }, "A"),
+//   h("div", { key: "B" }, "B"),
+//   h("div", { key: "C" }, "C"),
+//   h("div", { key: "D" }, "D"),
+//   h("div", { key: "E" }, "E"),
+//   h("div", { key: "Z" }, "Z"),
+//   h("div", { key: "F" }, "F"),
+//   h("div", { key: "G" }, "G"),
+// ];
+// const nextChildren = [
+//   h("div", { key: "A" }, "A"),
+//   h("div", { key: "B" }, "B"),
+//   h("div", { key: "D" }, "D"),
+//   h("div", { key: "C" }, "C"),
+//   h("div", { key: "Y" }, "Y"),
+//   h("div", { key: "E" }, "E"),
+//   h("div", { key: "F" }, "F"),
+//   h("div", { key: "G" }, "G"),
+// ];
+
+/**
+ * fix:
+ */
 const prevChildren = [
   h("div", { key: "A" }, "A"),
-  h("div", { key: "B" }, "B"),
+  h("div", {}, "B"),
   h("div", { key: "C" }, "C"),
   h("div", { key: "D" }, "D"),
-  h("div", { key: "E" }, "E"),
-  h("div", { key: "Z" }, "Z"),
-  h("div", { key: "F" }, "F"),
-  h("div", { key: "G" }, "G"),
 ];
 const nextChildren = [
   h("div", { key: "A" }, "A"),
-  h("div", { key: "B" }, "B"),
-  h("div", { key: "D" }, "D"),
   h("div", { key: "C" }, "C"),
-  h("div", { key: "Y" }, "Y"),
-  h("div", { key: "E" }, "E"),
-  h("div", { key: "F" }, "F"),
-  h("div", { key: "G" }, "G"),
+  h("div", {}, "B"),
+  h("div", { key: "D" }, "D"),
 ];
-
 export default {
   name: "ArrayToText",
   setup() {

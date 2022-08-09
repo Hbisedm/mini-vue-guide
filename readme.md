@@ -3392,11 +3392,7 @@ i 大于 e2 说明 新的比老的多
 > 上面的处理只是处理了左右
 > 此时的 i、e1、e2 都是有用的 确定了中间要处理的范围。
 
-
-
 ![image-20220809211518317](https://raw.githubusercontent.com/Hbisedm/my-blob-picGo/main/img/202208092115378.png)
-
-
 
 ##### 处理中间的新节点的属性以及删除老节点
 
@@ -3448,7 +3444,7 @@ if (newIndex === undefined) {
 
 目前完成进度：
 
-- 做完这一步说明我们可以删除老数组中存在的，而新数组中没有的节点，以及 patch 下新老中都共同拥有的节点的新属性or新内容。
+- 做完这一步说明我们可以删除老数组中存在的，而新数组中没有的节点，以及 patch 下新老中都共同拥有的节点的新属性 or 新内容。
 - 还差新增新数组中的新节点，正确**移动**节点在新数组中的位置。
 
 ##### 移动 与 新增
@@ -3456,8 +3452,8 @@ if (newIndex === undefined) {
 需要个变量`toBePatched`去记录新数组中 中间还没处理的节点个数
 需要个映射表`newIndexToOldIndexMap`，代表新数组中间节点中，每个位置(从零开始)的节点是否来自旧数组
 
-- value若不是0，表示来自旧节点中的哪个索引
-- 0表示新创建的的逻辑意义
+- value 若不是 0，表示来自旧节点中的哪个索引
+- 0 表示新创建的的逻辑意义
 
 ```ts
 /**
@@ -3469,7 +3465,7 @@ for (let i = 0; i < toBePatched; i++) {
 ```
 
 > [a, b, (c, d, e), f, g] 旧数组
-> 0, 1, (2, 3, 4), 5, 6  索引
+> 0, 1, (2, 3, 4), 5, 6 索引
 > [a, b, (e, c, d), f, g] 新数组
 > -------[0, 1, 2]---------- 从 0 开始
 > 生成的映射表`newIndexToOldIndexMap`就是
@@ -3596,3 +3592,68 @@ function getSequence(arr: number[]): number[] {
   return result;
 }
 ```
+
+## fix patchKeyedChildren
+
+> 下面这段逻辑，是判断当前新节点是否在老节点数组中存在
+> 若存在，拿老节点数组中的索引
+
+```ts
+/** 新节点的下标 */
+let newIndex;
+/** 老节点的props有key的情况 */
+if (prevChild.key != null) {
+  newIndex = keyToNewIndexMap.get(prevChild.key);
+} else {
+  /**
+   * 没有key的话，就遍历整个新的数组中间部分， 这也是key的重要作用，这样遍历就消耗更多性能了。
+   */
+  for (let j = s2; j < e2; j++) {
+    if (isSameVNodeType(prevChild, c2[j])) {
+      newIndex = j;
+      break;
+    }
+  }
+}
+```
+
+> for (let j = s2; j < e2; j++) {} 若 j< e2 则会将最后一个节点给排除掉
+
+编写测试用例
+
+```js
+const prevChildren = [
+  h("div", { key: "A" }, "A"),
+  h("div", {}, "B"),
+  h("div", { key: "C" }, "C"),
+  h("div", { key: "D" }, "D"),
+];
+const nextChildren = [
+  h("div", { key: "A" }, "A"),
+  h("div", { key: "C" }, "C"),
+  h("div", {}, "B"),
+  h("div", { key: "D" }, "D"),
+];
+```
+
+上面的例子，执行完后还是会正确的展示成对应的样子，为什么？
+
+因为在下面这段代码中，会再次遍历新数组中的节点，将老数组中不存在的节点进行创建
+
+```ts
+/**
+ * 创建节点 newIndexToOldIndexMap中为0的表示是创建的节点
+ */
+if (newIndexToOldIndexMap[i] === 0) {
+  patch(null, nextChild, container, parentComponent, anchor);
+}
+```
+
+导致展示正确的结果,但是内部行为不一样。
+
+> for (let j = s2; j < e2; j++) {...}
+
+- 改为 j< e2
+  这样删除后新增
+- 改为 j <= e2
+  这样是移动节点
