@@ -255,7 +255,7 @@ export function createRenderer(options) {
           /**
            * 没有key的话，就遍历整个新的数组中间部分， 这也是key的重要作用，这样遍历就消耗更多性能了。
            */
-          for (let j = s2; j < e2; j++) {
+          for (let j = s2; j <= e2; j++) {
             if (isSameVNodeType(prevChild, c2[j])) {
               newIndex = j;
               break;
