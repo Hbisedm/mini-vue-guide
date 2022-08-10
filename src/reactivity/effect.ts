@@ -67,6 +67,7 @@ export function effect(fn, options: any = {}) {
   reactiveEffect.run();
   const runner: any = reactiveEffect.run.bind(reactiveEffect);
   runner._effect = reactiveEffect;
+  /* 返回值再次调用执行对应的runner */
   return runner;
 }
 // 收集依赖
@@ -96,7 +97,7 @@ export function trackEffects(dep) {
 // 触发依赖
 export function trigger(target, key) {
   const depsMap = targetsMap.get(target);
-  
+
   if (!depsMap) return;
   const dep = depsMap.get(key);
   triggerEffects(dep);

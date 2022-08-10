@@ -4,6 +4,7 @@ import { createComponentInstance, setupComponent } from "./component";
 import { ShapeFlags } from "./ShapeFlags";
 import { createAppAPI } from "./createApp";
 import { effect } from "../reactivity/effect";
+import { shouldUpdateComponent } from "./componentUpdateUtils";
 
 export function createRenderer(options) {
   const {
@@ -304,8 +305,8 @@ export function createRenderer(options) {
       /** 最长递增子序列的结束索引 因为是索引索引要减一嘛 */
       let j = increasingNewIndexSequence.length - 1;
       for (let i = toBePatched - 1; i >= 0; i--) {
-        /** 找锚点，
-         * 如果是正序遍历的话，会造成锚点可能是个不确定的元素，
+        /** 在新数组中找锚点，
+         * 如果是正序遍历新数组的话，会造成锚点可能是个不确定的元素，
          * 倒序就不会出现这个情况
          */
         const nextIndex = i + s2;
@@ -410,7 +411,36 @@ export function createRenderer(options) {
     parentComponent,
     anchor
   ) {
-    mountComponent(n2, container, parentComponent, anchor);
+    if (!n1) {
+      /** init */
+      mountComponent(n2, container, parentComponent, anchor);
+    } else {
+      /** update */
+      updateComponent(n1, n2);
+    }
+  }
+  /**
+   * 更新组件
+   * 重新生成vnode，patch
+   * @param n1
+   * @param n2
+   */
+  function updateComponent(n1, n2) {
+    /** 拿到老节点的组件实例 */
+    const instance = (n2.component = n1.component);
+    /**
+     * 判断需不需要更新
+     */
+    if (shouldUpdateComponent(n1, n2)) {
+      /** 将组件实例的next赋值为新的vnode */
+      instance.next = n2;
+      /** update为effect包裹的副作用函数 */
+      instance.update();
+    } else {
+      /** 不需要更新的处理逻辑 */
+      n2.el = n1.el;
+      instance.vnode = n2;
+    }
   }
   function mountComponent(
     initialVNode: any,
@@ -418,24 +448,50 @@ export function createRenderer(options) {
     parentComponent,
     anchor
   ) {
-    const instance = createComponentInstance(initialVNode, parentComponent);
+    const instance = (initialVNode.component = createComponentInstance(
+      initialVNode,
+      parentComponent
+    ));
 
+    /**
+     * 安装组件逻辑
+     * 执行完毕后，
+     * 处理了组件的props slot
+     * instance.proxy = instance的一个代理
+     * instance.setupState = 此时有setup的返回值的代理对象，
+     * instance.render = 组件的render函数
+     * */
     setupComponent(instance);
+    /** 组件渲染副作用函数 */
     setupRenderEffect(instance, initialVNode, container, anchor);
   }
   function setupRenderEffect(instance: any, initialVNode, container, anchor) {
-    effect(() => {
+    /**
+     * 使用effect监控里面的响应式对象
+     * effect的返回值，再次调用，可以执行里面的回调函数
+     */
+    instance.update = effect(() => {
+      // 第一次进来时(init)，这个isMounted为false
       if (!instance.isMounted) {
         const { proxy } = instance;
+        /** 让instance的代理去执行组件的定义的render函数 返回的是一个subTree虚拟节点 */
         const subTree = (instance.subTree = instance.render.call(proxy));
-        console.log("instance");
-        console.log(instance);
+        /** 调用patch方法挂载这个虚拟节点树 */
         patch(null, subTree, container, instance, anchor);
+        /** 挂载后 subTree树会带有个el真实节点的属性 */
         /** 组件对应的根element元素遍历后赋予真实$el */
         initialVNode.el = subTree.el;
         instance.isMounted = true;
       } else {
         console.log("update");
+        /** update component VNode */
+        const { next, vnode } = instance;
+        /** next不为空 说明可以更新组件 */
+        if (next) {
+          next.el = vnode.el;
+          updateComponentPreRender(instance, next);
+        }
+
         const { proxy } = instance;
         const subTree = instance.render.call(proxy);
         const prevSubTree = instance.subTree;
@@ -450,6 +506,19 @@ export function createRenderer(options) {
   return {
     createApp: createAppAPI(render),
   };
+}
+/**
+ * 更新组件
+ * @param instance 当前组件实例
+ * @param nextVNode 需要更新的虚拟节点
+ */
+function updateComponentPreRender(instance, nextVNode) {
+  /** 更新组件的虚拟节点 */
+  instance.vnode = nextVNode;
+  /** 将更新的虚拟节点置为空 */
+  instance.next = null;
+  /** 更新组件的props */
+  instance.props = nextVNode.props;
 }
 /**
  * 生成最长递增子序列

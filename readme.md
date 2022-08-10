@@ -3657,3 +3657,148 @@ if (newIndexToOldIndexMap[i] === 0) {
   这样删除后新增
 - 改为 j <= e2
   这样是移动节点
+
+## 组件更新
+
+> 更新逻辑
+
+- 更新组件的数据 props 这个点触发 effect 的副作用函数 render
+- 执行组件的 render 函数，使用 effect 返回的 runner 函数，保存到组件实例的 update 属性，然后再更新的时候执行 render。
+- 判断组件到底需不需要更新。
+
+```ts
+function setupRenderEffect(instance: any, initialVNode, container, anchor) {
+  /**
+   * 使用effect监控里面的响应式对象
+   * effect的返回值，再次调用，可以执行里面的回调函数
+   */
+  instance.update = effect(() => {
+    // 第一次进来时(init)，这个isMounted为false
+    if (!instance.isMounted) {
+      const { proxy } = instance;
+      /** 让instance的代理去执行组件的定义的render函数 返回的是一个subTree虚拟节点 */
+      const subTree = (instance.subTree = instance.render.call(proxy));
+      /** 调用patch方法挂载这个虚拟节点树 */
+      patch(null, subTree, container, instance, anchor);
+      /** 挂载后 subTree树会带有个el真实节点的属性 */
+      /** 组件对应的根element元素遍历后赋予真实$el */
+      initialVNode.el = subTree.el;
+      instance.isMounted = true;
+    } else {
+      console.log("update");
+      /** update component VNode */
+      const { next, vnode } = instance;
+      /** next不为空 说明可以更新组件 */
+      /*************************** 重点是这个 **************************/
+      if (next) {
+        next.el = vnode.el;
+        updateComponentPreRender(instance, next);
+      }
+      const { proxy } = instance;
+      const subTree = instance.render.call(proxy);
+      const prevSubTree = instance.subTree;
+      instance.subTree = subTree;
+      console.log("curr", subTree);
+      console.log("prev", prevSubTree);
+      patch(prevSubTree, subTree, container, instance, anchor);
+      /** 组件对应的根element元素遍历后赋予真实$el */
+    }
+  });
+}
+```
+
+更新 props，会自动触发上面的方法，接着呢，因为是更新啊，所以走 else 的逻辑 进入 patch ，然后走 processComponent
+
+```ts
+function processComponent(
+  n1,
+  n2: any,
+  container: any,
+  parentComponent,
+  anchor
+) {
+  if (!n1) {
+    /** init */
+    mountComponent(n2, container, parentComponent, anchor);
+  } else {
+    /** update */
+    updateComponent(n1, n2);
+  }
+}
+```
+
+执行 updateComponent
+
+```ts
+function updateComponent(n1, n2) {
+  /** 拿到老节点的组件实例 */
+  const instance = (n2.component = n1.component);
+  /**
+   * 判断需不需要更新
+   */
+  if (shouldUpdateComponent(n1, n2)) {
+    /** 将组件实例的next赋值为新的vnode */
+    /*************************** 重点是这个 **************************/
+    instance.next = n2;
+    /** update为effect包裹的副作用函数 */
+    /*************************** 重点是这个 **************************/
+    instance.update();
+  } else {
+    /** 不需要更新的处理逻辑 */
+    n2.el = n1.el;
+    instance.vnode = n2;
+  }
+}
+```
+
+上面的 update 方法又会再次出发 patch 方法
+
+```ts
+console.log("update");
+/** update component VNode */
+const { next, vnode } = instance;
+/** next不为空 说明可以更新组件 */
+/*************************** 重点是这个 **************************/
+/** 这个时候可以拿到值了 */
+if (next) {
+  next.el = vnode.el;
+  updateComponentPreRender(instance, next);
+}
+const { proxy } = instance;
+const subTree = instance.render.call(proxy);
+const prevSubTree = instance.subTree;
+instance.subTree = subTree;
+patch(prevSubTree, subTree, container, instance, anchor);
+/** 组件对应的根element元素遍历后赋予真实$el */
+```
+
+- 将原来的 el 真实节点数据赋值给 nextVNode
+- 将 nextVNode 的最新 vnode 赋值给 组件实例的 vnode
+
+目的是让组件实例的属性保持最新状态, 后面调用 patch 更新
+
+```ts
+function updateComponentPreRender(instance, nextVNode) {
+  /** 更新组件的虚拟节点 */
+  instance.vnode = nextVNode;
+  /** 将更新的虚拟节点置为空 */
+  instance.next = null;
+  /** 更新组件的props */
+  instance.props = nextVNode.props;
+}
+```
+
+更新的这代码
+
+```ts
+const { proxy } = instance;
+const subTree = instance.render.call(proxy);
+const prevSubTree = instance.subTree;
+instance.subTree = subTree;
+```
+
+这个代理对象拿到，调用 render 函数。 render 函数中的`this.$props.msg`是拿到最新的值
+为什么是最新的
+以为 instance 的 VNode 是最新的
+拿$props.msg 等同于 拿 component 实例的代理对象的 props 也等同于拿 VNode 的 props
+
