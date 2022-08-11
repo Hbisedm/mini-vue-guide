@@ -4026,3 +4026,70 @@ export const enum NodeTypes {
   SIMPLE_EXPRESSION,
 }
 ```
+
+## 解析 Element
+
+先写个测试用例
+
+```ts
+describe("element", () => {
+  test("simple element div", () => {
+    const ast = baseParse("<div></div>");
+    expect(ast.children[0]).toStrictEqual({
+      type: NodeTypes.ELEMENT,
+      tag: "div",
+    });
+  });
+});
+```
+
+处理逻辑
+
+1. 判断是不是 element
+2. 取出 tag
+3. 将处理后的代码推进
+
+```ts
+   else if (s[0] === "<") {
+    /**
+     * 处理Element
+     * 使用正则匹配 `<`开头 `[a-z]*`
+     */
+    if (/[a-z]/.test(s[1])) {
+      node = parseElement(context);
+    }
+  }
+```
+
+处理 2 次 前标签 和后标签 给个 TagType 表示是开始还是结束
+
+```ts
+function parseElement(context) {
+  const element = parseTag(context, TagType.START);
+  parseTag(context, TagType.END);
+  return element;
+}
+```
+
+```ts
+function parseTag(context: any, tagType: TagType) {
+  /**
+   * 1. 解析tag
+   */
+  const match: any = /^<\/?([a-z]*)/i.exec(context.source);
+  const tag = match[1];
+
+  /**
+   * 2. 删除已处理完成的代码
+   */
+  advanceBy(context, match[0].length);
+  advanceBy(context, 1);
+
+  /** 结束标签无需返回 */
+  if (tagType === TagType.END) return;
+  return {
+    type: NodeTypes.ELEMENT,
+    tag,
+  };
+}
+```
