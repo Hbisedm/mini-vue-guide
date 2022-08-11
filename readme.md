@@ -3884,3 +3884,145 @@ function flushJobs() {
 4. 等到数据更新完毕，也就是同步任务没了，
 5. 会往微任务队列里面看有没有任务呢， 事件循环机制
 6. 因为都是 Promise.then 的类型，所以谁先加入谁先执行，也就是啊异步更新视图的逻辑先于用户的 nextTick
+
+## 编译模块
+
+template --parse--> ast --transform--> ast --code generate--> render 函数
+
+## 解析插值功能
+
+> 插值功能：{{message}}
+
+先写个`happy path`测试用例
+
+```ts
+describe("parse", () => {
+  describe("interpolation", () => {
+    test("simple interpolation", () => {
+      const ast = baseParse("{{message}}");
+
+      expect(ast.children[0]).toStrictEqual({
+        type: NodeTypes.INTERPOLATION,
+        content: {
+          type: NodeTypes.SIMPLE_EXPRESSION,
+          content: "message",
+        },
+      });
+    });
+  });
+});
+```
+
+```ts
+export function baseParse(content: string): any {
+  return {
+    children: [
+      {
+        type: NodeTypes.INTERPOLATION,
+        content: {
+          type: NodeTypes.SIMPLE_EXPRESSION,
+          content: "message",
+        },
+      },
+    ],
+  };
+}
+```
+
+先伪完成这个用例，然后开始抽离代码
+
+1. 先讲包含 children 属性的这个对象抽离出来
+
+```ts
+function createRoot(children) {
+  return {
+    children,
+  };
+}
+```
+
+2. 将传递过来的模版字符串放到一个中间对象里面
+
+```ts
+function createParseContext(content: string): any {
+  return {
+    source: content,
+  };
+}
+```
+
+3. 解析这个对象
+
+首先明确返回的 ast 对象是有多个节点的
+所以是有个数组的
+将解析的`{{xxx}}`转成一个节点对象
+
+```ts
+function parseChildren(context) {
+  const nodes: any = [];
+
+  /**
+   * {{}}
+   */
+  let node;
+  if (context.source.startsWith("{{")) {
+    node = parseInterpolation(context);
+  }
+
+  nodes.push(node);
+
+  return nodes;
+}
+```
+
+4. 解析模版字符串
+
+```ts
+function parseInterpolation(context) {
+  // {{message}}
+  const openDelimiter = "{{";
+  const closeDelimiter = "}}";
+  /**
+   * 拿到字符尾部索引
+   */
+  const closeIndex = context.source.indexOf(
+    closeDelimiter,
+    openDelimiter.length
+  );
+  /**
+   *  推进
+   *  {{msg}}{{name}} => msg}}{{name}}
+   */
+  advanceBy(context, openDelimiter.length);
+
+  /**
+   * 计算出插值模版里面字符的长度
+   */
+  const rawContentLength = closeIndex - openDelimiter.length;
+
+  const rawContent = context.source.slice(0, rawContentLength);
+  const content = rawContent.trim();
+  /**
+   * 继续推进 相当于当前{{}}这里的东西已经解析完毕了
+   * msg}}{{name}} => {{name}}
+   */
+  advanceBy(context, rawContentLength + closeDelimiter.length);
+
+  return {
+    type: NodeTypes.INTERPOLATION,
+    content: {
+      type: NodeTypes.SIMPLE_EXPRESSION,
+      content,
+    },
+  };
+}
+```
+
+将一些常量抽离出来
+
+```ts
+export const enum NodeTypes {
+  INTERPOLATION,
+  SIMPLE_EXPRESSION,
+}
+```
