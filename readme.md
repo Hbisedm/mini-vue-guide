@@ -3802,3 +3802,85 @@ instance.subTree = subTree;
 以为 instance 的 VNode 是最新的
 拿$props.msg 等同于 拿 component 实例的代理对象的 props 也等同于拿 VNode 的 props
 
+## nextTicker
+
+> Vue3 的视图更新是异步的
+
+目前只实现了同步，通过下面的 demo 可以看出
+
+```js
+  setup() {
+    const count = ref(1);
+    function onClick() {
+      for (let i = 0; i < 100; i++) {
+        console.log("update");
+        count.value = i;
+      }
+    }
+  }
+```
+
+当触发 onClick 事件时，视图同步更新了 100 次
+
+> 视图更新一次，数据更新 100 次
+
+因为视图更新是使用 effect 包裹起来的，可以使用提供的第二个对象参数属性 scheduler，
+将视图更新的逻辑放到这个去操作，是用`instance.update`暂存这个更新逻辑方法
+
+```ts
+{
+  scheduler() {
+    console.log("update - scheduler");
+    queueJobs(instance.update);
+  },
+}
+```
+
+采用微任务的形式，将视图更新丢到任务队列里面。
+
+创建`scheduler.ts`，将异步操作的抽离出来
+
+```ts
+/** 队列 */
+const queue: any[] = [];
+
+/** 防止Promise频繁创建 */
+let isFlushPending = false;
+
+/** 提供给用户 可以拿到视图异步更新后的数据, */
+export function nextTick(fn) {
+  return fn ? Promise.resolve().then(fn) : Promise.resolve();
+}
+
+export function queueJobs(job) {
+  if (!queue.includes(job)) {
+    queue.push(job);
+  }
+  /** 执行加入异步队列 */
+  queueFlush();
+}
+
+export function queueFlush() {
+  if (isFlushPending) return;
+  isFlushPending = true;
+  /**
+   * 每次进来都会创建个Promise
+   * 使用个变量去控制Promise的创建
+   */
+  nextTick(flushJobs);
+}
+function flushJobs() {
+  isFlushPending = false;
+  let job;
+  while ((job = queue.shift())) {
+    job && job();
+  }
+}
+```
+
+1. 用户点击按钮，触发更新逻辑
+2. 更新逻辑丢到异步队列里面，然后等待执行这个微任务
+3. 用户调用 nextTick()方法，再次往微任务队列里面丢微任务。
+4. 等到数据更新完毕，也就是同步任务没了，
+5. 会往微任务队列里面看有没有任务呢， 事件循环机制
+6. 因为都是 Promise.then 的类型，所以谁先加入谁先执行，也就是啊异步更新视图的逻辑先于用户的 nextTick

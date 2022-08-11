@@ -5,6 +5,7 @@ import { ShapeFlags } from "./ShapeFlags";
 import { createAppAPI } from "./createApp";
 import { effect } from "../reactivity/effect";
 import { shouldUpdateComponent } from "./componentUpdateUtils";
+import { queueJobs } from "./scheduler";
 
 export function createRenderer(options) {
   const {
@@ -470,38 +471,46 @@ export function createRenderer(options) {
      * 使用effect监控里面的响应式对象
      * effect的返回值，再次调用，可以执行里面的回调函数
      */
-    instance.update = effect(() => {
-      // 第一次进来时(init)，这个isMounted为false
-      if (!instance.isMounted) {
-        const { proxy } = instance;
-        /** 让instance的代理去执行组件的定义的render函数 返回的是一个subTree虚拟节点 */
-        const subTree = (instance.subTree = instance.render.call(proxy));
-        /** 调用patch方法挂载这个虚拟节点树 */
-        patch(null, subTree, container, instance, anchor);
-        /** 挂载后 subTree树会带有个el真实节点的属性 */
-        /** 组件对应的根element元素遍历后赋予真实$el */
-        initialVNode.el = subTree.el;
-        instance.isMounted = true;
-      } else {
-        console.log("update");
-        /** update component VNode */
-        const { next, vnode } = instance;
-        /** next不为空 说明可以更新组件 */
-        if (next) {
-          next.el = vnode.el;
-          updateComponentPreRender(instance, next);
-        }
+    instance.update = effect(
+      () => {
+        // 第一次进来时(init)，这个isMounted为false
+        if (!instance.isMounted) {
+          const { proxy } = instance;
+          /** 让instance的代理去执行组件的定义的render函数 返回的是一个subTree虚拟节点 */
+          const subTree = (instance.subTree = instance.render.call(proxy));
+          /** 调用patch方法挂载这个虚拟节点树 */
+          patch(null, subTree, container, instance, anchor);
+          /** 挂载后 subTree树会带有个el真实节点的属性 */
+          /** 组件对应的根element元素遍历后赋予真实$el */
+          initialVNode.el = subTree.el;
+          instance.isMounted = true;
+        } else {
+          console.log("update");
+          /** update component VNode */
+          const { next, vnode } = instance;
+          /** next不为空 说明可以更新组件 */
+          if (next) {
+            next.el = vnode.el;
+            updateComponentPreRender(instance, next);
+          }
 
-        const { proxy } = instance;
-        const subTree = instance.render.call(proxy);
-        const prevSubTree = instance.subTree;
-        instance.subTree = subTree;
-        console.log("curr", subTree);
-        console.log("prev", prevSubTree);
-        patch(prevSubTree, subTree, container, instance, anchor);
-        /** 组件对应的根element元素遍历后赋予真实$el */
+          const { proxy } = instance;
+          const subTree = instance.render.call(proxy);
+          const prevSubTree = instance.subTree;
+          instance.subTree = subTree;
+          console.log("curr", subTree);
+          console.log("prev", prevSubTree);
+          patch(prevSubTree, subTree, container, instance, anchor);
+          /** 组件对应的根element元素遍历后赋予真实$el */
+        }
+      },
+      {
+        scheduler() {
+          console.log("update - scheduler");
+          queueJobs(instance.update);
+        },
       }
-    });
+    );
   }
   return {
     createApp: createAppAPI(render),
