@@ -4093,3 +4093,48 @@ function parseTag(context: any, tagType: TagType) {
   };
 }
 ```
+
+## 解析 Text
+
+```ts
+describe("text", () => {
+  test("simple text parse", () => {
+    const ast = baseParse("some text");
+    expect(ast.children[0]).toStrictEqual({
+      type: NodeTypes.TEXT,
+      content: "some text",
+    });
+  });
+});
+```
+
+1. 提取 text
+2. 推进
+
+```ts
+function parseText(context) {
+  const length = context.source.length;
+  /** 1. 获取值 */
+  let content = context.source.slice(0, length);
+  /** 2. 推进 */
+  advanceBy(context, length);
+  return {
+    type: NodeTypes.TEXT,
+    content,
+  };
+}
+```
+
+抽离下和插值一样处理逻辑: 提取值
+
+```ts
+function parseTextData(context: any, length) {
+  /** 1. 获取值 */
+  let content = context.source.slice(0, length);
+  /** 2. 推进 */
+  advanceBy(context, length);
+  return content;
+}
+```
+
+这个需要传入个参数是因为插值`xxx}}` 后面的`}}`不是需要的内容，给个长度让 parseTextData 函数好处理
