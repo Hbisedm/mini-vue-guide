@@ -12,37 +12,70 @@ const enum TagType {
  */
 export function baseParse(content: string): any {
   const context = createParseContext(content);
-  return createRoot(parseChildren(context));
+  return createRoot(parseChildren(context, []));
 }
 
-function parseChildren(context) {
+function parseChildren(context, ancestors) {
   const nodes: any = [];
-
-  let node;
-  const s = context.source;
-  /**
-   * {{}}
-   * 处理插值表达式
-   */
-  if (s.startsWith("{{")) {
-    node = parseInterpolation(context);
-  } else if (s[0] === "<") {
+  while (!isEnd(context, ancestors)) {
+    let node;
+    const s = context.source;
     /**
-     * 处理Element
-     * 使用正则匹配 `<`开头 `[a-z]*`
+     * {{}}
+     * 处理插值表达式
      */
-    if (/[a-z]/.test(s[1])) {
-      node = parseElement(context);
+    if (s.startsWith("{{")) {
+      node = parseInterpolation(context);
+    } else if (s[0] === "<") {
+      /**
+       * 处理Element
+       * 使用正则匹配 `<`开头 `[a-z]*`
+       */
+      if (/[a-z]/.test(s[1])) {
+        node = parseElement(context, ancestors);
+      }
+    } else {
+      node = parseText(context);
     }
-  } else {
-    node = parseText(context);
+    nodes.push(node);
   }
-  nodes.push(node);
   return nodes;
 }
 
+function isEnd(context, ancestors) {
+  const s = context.source;
+  // Implement
+  // 1. context.source 空
+  // 2. tag
+  if (s.startsWith("</")) {
+    /** 优化倒序，提高遍历性能 */
+    for (let i = ancestors.length; i >= 0; i--) {
+      const tag = ancestors[i].tag;
+      if (startsWithEndTagOpen(s, tag)) {
+        // if (s.slice(2, 2 + tag.length) === tag) {
+        return true;
+      }
+    }
+  }
+
+  return !s;
+}
+
 function parseText(context) {
-  let content = parseTextData(context, context.source.length);
+  let endIndex = context.source.length;
+
+  const endTokens = ["{{", "<"];
+
+  for (let i = 0; i < endTokens.length; i++) {
+    const index = context.source.indexOf(endTokens[i]);
+    /** 取出最小值 */
+    if (index !== -1 && endIndex > index) {
+      endIndex = index;
+    }
+  }
+  let content = parseTextData(context, endIndex);
+  console.log("parseTexted ----");
+  console.log(content);
 
   return {
     type: NodeTypes.TEXT,
@@ -58,10 +91,29 @@ function parseTextData(context: any, length) {
   return content;
 }
 
-function parseElement(context) {
-  const element = parseTag(context, TagType.START);
-  parseTag(context, TagType.END);
+function parseElement(context, ancestors) {
+  const element: any = parseTag(context, TagType.START);
+  ancestors.push(element);
+  element.children = parseChildren(context, ancestors);
+  ancestors.pop();
+  console.log(" hbisedm Log...");
+  console.log(element.tag);
+  console.log(context.source);
+
+  if (startsWithEndTagOpen(context.source, element.tag)) {
+    // if (context.source.slice(2, 2 + element.tag.length) === element.tag) {
+    parseTag(context, TagType.END);
+  } else {
+    throw new Error(`应该来个${element.tag}结尾`);
+  }
   return element;
+}
+
+function startsWithEndTagOpen(source, tag) {
+  return (
+    source.startsWith("</") &&
+    source.slice(2, 2 + tag.length).toLowerCase() === tag.toLowerCase()
+  );
 }
 
 function parseTag(context: any, tagType: TagType) {
