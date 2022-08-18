@@ -4138,3 +4138,163 @@ function parseTextData(context: any, length) {
 ```
 
 这个需要传入个参数是因为插值`xxx}}` 后面的`}}`不是需要的内容，给个长度让 parseTextData 函数好处理
+
+## 联合三种类型
+
+> 解析`<p>hi,{{message}}</p>`
+
+```ts
+test("happy path", () => {
+  const ast = baseParse("<p>hi,{{message}}</p>");
+  expect(ast.children[0]).toStrictEqual({
+    type: NodeTypes.ELEMENT,
+    tag: "p",
+    children: [
+      {
+        type: NodeTypes.TEXT,
+        content: "hi,",
+      },
+      {
+        type: NodeTypes.INTERPOLATION,
+        content: {
+          type: NodeTypes.SIMPLE_EXPRESSION,
+          content: "message",
+        },
+      },
+    ],
+  });
+});
+```
+
+- 首先解析`<p>`
+- 解析完毕解析里面的内容 -> children
+- 解析到`hi,` 加入判断逻辑，遇到`{{` or `<` 就表示 text 节点解析完毕
+- 解析`{{}}`插值，
+- 最后解析到`</p>` 结束
+
+1. parseChildren
+2. parseElement
+3. parseChildren
+4. parseText
+5. parseInterpolation
+
+在 parseChildren 中加入 while，循环解析当前的子节点
+
+```ts
+function isEnd(context, ancestors) {
+  const s = context.source;
+  // 跳出条件
+  // 1. context.source 空
+  // 2. tag
+  if (s.startsWith("</")) {
+    /** 优化倒序，提高遍历性能 */
+    for (let i = ancestors.length; i >= 0; i--) {
+      const tag = ancestors[i].tag;
+      if (startsWithEndTagOpen(s, tag)) {
+        // if (s.slice(2, 2 + tag.length) === tag) {
+        return true;
+      }
+    }
+  }
+  return !s;
+}
+```
+
+```ts
+test.only(" should throw error ", () => {
+  // baseParse("<div><span></div>");
+  expect(() => {
+    baseParse("<div><span></div>");
+  }).toThrow();
+});
+```
+
+对于这种没有关闭标签的，应该给个`Error`提示
+
+那么需要思考如何判断，他是单标签没有闭合。
+
+使用一个栈空间结构存下当前的 tag -> `ancestors: []`
+
+在解析 element 前存标签，解析完 tag 的内容后踢出栈
+
+```ts
+function parseElement(context, ancestors) {
+  const element: any = parseTag(context, TagType.START);
+  // 加入栈
+  ancestors.push(element);
+  element.children = parseChildren(context, ancestors);
+  // 解析完毕 出栈
+  ancestors.pop();
+  if (startsWithEndTagOpen(context.source, element.tag)) {
+    parseTag(context, TagType.END);
+  } else {
+    throw new Error(`应该来个${element.tag}结尾`);
+  }
+  return element;
+}
+```
+
+若没有与之匹配的 tag 则抛出异常
+
+```ts
+function startsWithEndTagOpen(source, tag) {
+  return (
+    source.startsWith("</") &&
+    source.slice(2, 2 + tag.length).toLowerCase() === tag.toLowerCase()
+  );
+}
+```
+
+拿到当前进入 parseElement 的 element 的 tag 与 当前推进后的文本进行匹配
+
+## 有限状态机
+
+> 等于正则表达式
+
+用编码的形式的正则
+画个图 举个例子
+
+读取输入，根据输入的内容进行不同状态的执行操作。
+举个例子
+
+```js
+// console.log(/abc/.test("abcs"));
+
+function fooA(char) {
+  if (char === "a") {
+    return fooB;
+  }
+  return fooA;
+}
+function fooB(char) {
+  if (char === "b") {
+    return fooC;
+  }
+  return fooA;
+}
+function fooC(char) {
+  if (char === "c") {
+    return end;
+  }
+  return fooA;
+}
+function end() {
+  return end;
+}
+
+function main(swap) {
+  let currStatus = fooA;
+  for (let i = 0; i < swap.length; i++) {
+    let nextStatus = currStatus(swap[i]);
+    currStatus = nextStatus;
+    if (nextStatus === end) {
+      console.log(true);
+      currStatus = fooA;
+    }
+  }
+}
+
+const res = main("abcddabddabc");
+
+console.log(res);
+```
