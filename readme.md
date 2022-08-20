@@ -4298,3 +4298,129 @@ const res = main("abcddabddabc");
 
 console.log(res);
 ```
+
+## 实现 transform
+
+来个单测
+
+```ts
+describe("transform", () => {
+  it("happy path", () => {
+    const ast = baseParse("<div>hi,{{message}}</div>");
+    transform(ast);
+    const nodeText = ast.children[0].children[0];
+    expect(nodeText.content).toBe("hi,mini-vue");
+  });
+});
+```
+
+实现步骤
+
+1. 遍历树节点
+2. Text 类型的 content 加入`mini-vue`
+
+```ts
+import { NodeTypes } from "./ast";
+export function transform(root) {
+  // 深度遍历
+  traverseNodes(root);
+}
+
+function traverseNodes(root: any) {
+  // Implement
+  if (root.type === NodeTypes.TEXT) {
+    root.content = root.content + "mini-vue";
+  }
+  const children = root.children;
+  if (children) {
+    for (let i = 0; i < children.length; i++) {
+      const node = children[i];
+      traverseNodes(node);
+    }
+  }
+}
+```
+
+实现了，但是我们想要它具有灵活性，从程序设计的角度看，当前这么写，很死板。 可以看出当前代码一些动态状态和稳定状态
+动态状态
+
+```ts
+if (root.type === NodeTypes.TEXT) {
+  root.content = root.content + "mini-vue";
+}
+```
+
+稳定状态
+
+```ts
+const children = root.children;
+if (children) {
+  for (let i = 0; i < children.length; i++) {
+    const node = children[i];
+    traverseNodes(node);
+  }
+}
+```
+
+设计代码时，需要抽离动态与稳定状态 ==> 低耦合
+
+这个动态状态其实可以抽出来，当做用户传递进来
+
+重构后， transform 的代码都是稳定的执行流程
+
+```ts
+export function transform(root, options) {
+  const context = createContext(root, options);
+  // 深度遍历
+  traverseNodes(root, context);
+}
+
+function traverseNodes(root: any, context) {
+  // Implement
+  const { nodeTransforms } = context;
+  nodeTransforms.forEach((transform) => {
+    transform(root);
+  });
+  const children = root.children;
+  if (children) {
+    for (let i = 0; i < children.length; i++) {
+      const node = children[i];
+      traverseNodes(node, context);
+    }
+  }
+}
+function createContext(root: any, options: any) {
+  const context = {
+    root,
+    nodeTransforms: options.nodesTransforms || [],
+  };
+  return context;
+}
+```
+
+这里是动态的流程
+
+```ts
+describe("transform", () => {
+  it("happy path", () => {
+    const ast = baseParse("<div>hi,{{message}}</div>");
+
+    // 想要处理的时候再添加到transform中
+    const plugin = (node) => {
+      if (node.type === NodeTypes.TEXT) {
+        node.content = node.content + "mini-vue";
+      }
+    };
+
+    transform(ast, {
+      nodesTransforms: [plugin],
+    });
+
+    const nodeText = ast.children[0].children[0];
+
+    expect(nodeText.content).toBe("hi,mini-vue");
+  });
+});
+```
+
+这里我们只对 Text 类型进行处理，后期若要对插值 orElement 类型的话 就可以直接写 plugin 即可

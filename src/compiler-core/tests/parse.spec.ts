@@ -84,7 +84,7 @@ describe("parse", () => {
     });
   });
 
-  test.only(" should throw error ", () => {
+  test(" should throw error ", () => {
     // baseParse("<div><span></div>");
     expect(() => {
       baseParse("<div><span></div>");

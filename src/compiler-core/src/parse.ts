@@ -49,7 +49,7 @@ function isEnd(context, ancestors) {
   // 2. tag
   if (s.startsWith("</")) {
     /** 优化倒序，提高遍历性能 */
-    for (let i = ancestors.length; i >= 0; i--) {
+    for (let i = ancestors.length - 1; i >= 0; i--) {
       const tag = ancestors[i].tag;
       if (startsWithEndTagOpen(s, tag)) {
         // if (s.slice(2, 2 + tag.length) === tag) {
@@ -74,8 +74,8 @@ function parseText(context) {
     }
   }
   let content = parseTextData(context, endIndex);
-  console.log("parseTexted ----");
-  console.log(content);
+  // console.log("parseTexted ----");
+  // console.log(content);
 
   return {
     type: NodeTypes.TEXT,
@@ -96,9 +96,9 @@ function parseElement(context, ancestors) {
   ancestors.push(element);
   element.children = parseChildren(context, ancestors);
   ancestors.pop();
-  console.log(" hbisedm Log...");
-  console.log(element.tag);
-  console.log(context.source);
+  // console.log(" hbisedm Log...");
+  // console.log(element.tag);
+  // console.log(context.source);
 
   if (startsWithEndTagOpen(context.source, element.tag)) {
     // if (context.source.slice(2, 2 + element.tag.length) === element.tag) {
