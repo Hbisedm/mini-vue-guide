@@ -4424,3 +4424,82 @@ describe("transform", () => {
 ```
 
 这里我们只对 Text 类型进行处理，后期若要对插值 orElement 类型的话 就可以直接写 plugin 即可
+
+## 实现代码的生成 string 类型
+
+> 前面实现了将 template 转 ast ast 通过 transform 转另一种 ast 最后就到了转成对应的 render 函数了
+
+```ts
+describe("codegen", () => {
+  it("string", () => {
+    const ast = baseParse("hi");
+    const { code } = generate(ast);
+    expect(code).toMatchSnapshot();
+  });
+});
+```
+
+`toMatchSnapshot` 这个是快照测试，先编写个我们需要的快照,方便未来的测试。
+
+这是我们想要的结果
+
+```ts
+hi;
+
+// ==>
+
+exports[
+  `codegen string 1`
+] = `"return function render(_ctx,_cache){return 'hi'}"`;
+```
+
+[转换 render 函数的工具函数](https://vue-next-template-explorer.netlify.app/#eyJzcmMiOiJoaSIsInNzciI6ZmFsc2UsIm9wdGlvbnMiOnsibW9kZSI6ImZ1bmN0aW9uIiwicHJlZml4SWRlbnRpZmllcnMiOnRydWUsImhvaXN0U3RhdGljIjp0cnVlLCJjYWNoZUhhbmRsZXJzIjp0cnVlfX0=)
+
+生成一个 render 函数的主要逻辑：
+
+- 对生成结果划分为 return、function、render、codeGen
+- 基于结果去开发
+
+```ts
+export function generate(ast) {
+  const context = createCodegenContent();
+  context.push("return ");
+  const functionName = "render";
+  const args = ["_ctx", "_cache"];
+  const signature = args.join(",");
+
+  context.push(`function ${functionName}(${signature}){`);
+  genNode(ast.codegenNode, context);
+  context.push("}");
+
+  return {
+    code: context.code,
+  };
+}
+
+function createCodegenContent() {
+  const context = {
+    code: "",
+    push(source) {
+      context.code += source;
+    },
+  };
+  return context;
+}
+
+function genNode(codegenNode: any, context) {
+  const { push } = context;
+  const node = codegenNode;
+  push(`return '${node.content}'`);
+}
+```
+
+`ast.codegenNode`这个属性是在`transform`内处理的
+
+```ts
+function genCode(root) {
+  root.codegenNode = root.children[0];
+}
+```
+
+当然处理 string 类型挺简单的

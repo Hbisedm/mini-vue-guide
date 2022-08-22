@@ -1,7 +1,13 @@
-export function transform(root, options) {
+export function transform(root, options = {}) {
   const context = createContext(root, options);
   // 深度遍历
   traverseNodes(root, context);
+
+  genCode(root);
+}
+
+function genCode(root) {
+  root.codegenNode = root.children[0];
 }
 
 function traverseNodes(root: any, context) {
