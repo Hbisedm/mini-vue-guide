@@ -4503,3 +4503,213 @@ function genCode(root) {
 ```
 
 当然处理 string 类型挺简单的
+
+## 实现插值的 render 函数代码生成
+
+```ts
+exports[`codegen interpolation 1`] = `
+"const { toDisplayString: _toDisplayString } from Vue
+return function render(_ctx,_cache){return _toDisplayString(_ctx.message)}"
+`;
+```
+
+```ts
+it("interpolation", () => {
+  const ast = baseParse("{{message}}");
+  transform(ast);
+  const { code } = generate(ast);
+  expect(code).toMatchSnapshot();
+});
+it("interpolation", () => {
+  const ast = baseParse("{{message}}");
+  transform(ast, {
+    nodeTransforms: [transformExpression],
+  });
+  const { code } = generate(ast);
+
+  expect(code).toMatchSnapshot();
+});
+```
+
+目标代码是
+一个导入语句 `"const { toDisplayString: _toDisplayString } from Vue`
+和一个 return render 函数 `return function render(_ctx,_cache){return _toDisplayString(_ctx.message)}"`
+
+先实现第一个逻辑
+
+```ts
+function getFunctionPreamble(ast: any, context: any) {
+  const { push } = context;
+  const VueBinding = "Vue";
+  // const helpers = ["toDisplayString"];
+  const aliasHelper = (s) => `${s}: _${s}`;
+  const helpers = ["toDisplayString"];
+  if (helpers.length > 0) {
+    push(`const { ${helpers.map(aliasHelper).join(", ")} } from ${VueBinding}`);
+  }
+  push("\n");
+  push("return ");
+}
+```
+
+但是 codegen 的职责是生成 render 函数,所以 `const helpers = ["toDisplayString"];` 这种代码不适合写在这里
+将它抽离到`transform` 比较合适
+在`transform` 处理最后 , 为当前节点加入`helpers`属性
+`root.helpers = [...context.helpers.keys()];`
+在`traverseNodes` 中 处理插值类型，但是未来可以也会处理其他类型的 所以 写成 switch 去处理
+
+```ts
+switch (node.type) {
+  case NodeTypes.INTERPOLATION:
+    context.helper("toDisplayString");
+    break;
+  case NodeTypes.ROOT:
+    traverseChildren(node, context);
+    break;
+  case NodeTypes.ELEMENT:
+    traverseChildren(node, context);
+    break;
+  default:
+    break;
+}
+```
+
+这里处理`toDisplayString`, 为 transform 阶段时的上下文加入 helpers 做缓存, 和 helper 函数
+
+```ts
+function createContext(root: any, options: any) {
+  const context = {
+    root,
+    nodeTransforms: options.nodeTransforms || [],
+    helpers: new Map(),
+    helper(key) {
+      context.helpers.set(key, 1);
+    },
+  };
+  return context;
+}
+```
+
+helpers 缓存可以写对象也可以写 map 等等，反正都是做缓存用，目的是给 codegen 阶段的 ast 对象上 helpers 属性，属性执行我们 helper 函数的 param , 也就是这里的`toDisplayString`
+
+> 因为这里只是照着一个插值经过 vue 官方的 ast 转换后的结果进行处理，未来肯定有很多从 vue 模块导出来的属性 or 方法的
+
+这里就处理好了 第一个逻辑点
+
+那么第二个逻辑点
+
+render 函数 `return function render(_ctx,_cache){return _toDisplayString(_ctx.message)}"`
+
+分析一下 里面有 `_toDisplayString` `_ctx.message`
+
+之前处理的 text 代码如下
+
+```ts
+function getText(node, context: any) {
+  const { push } = context;
+  push(`'${node.content}'`);
+}
+```
+
+在处理插值类型时，插值里面的类型前面又定为表达式类型，所以这里处理 2 个类型，然后走同一个入口进来
+
+```ts
+function genNode(node: any, context) {
+  switch (node.type) {
+    case NodeTypes.TEXT:
+      getText(node, context);
+      break;
+    case NodeTypes.INTERPOLATION:
+      gedInterpolation(node, context);
+      break;
+    case NodeTypes.SIMPLE_EXPRESSION:
+      genExpression(node, context);
+      break;
+    default:
+      break;
+  }
+}
+```
+
+插值处理
+
+```ts
+function gedInterpolation(node, context: any) {
+  /**
+   * 插值 {{ 表达式类型的content }}
+   */
+  const { push, helper } = context;
+  push(`_toDisplayString(`);
+  // 处理表达式类型 ,使用统一的入口
+  genNode(node.content, context);
+  push(")");
+}
+```
+
+处理表达式
+
+```ts
+function genExpression(node, context) {
+  const { push } = context;
+  push(`_ctx.${node.content}`);
+}
+```
+
+这里就解决完毕了
+接下来重构下代码
+
+将处理的差值的 render 函数内容抽离出来
+
+```ts
+import { NodeTypes } from "../ast";
+
+/**
+ * 专用处理插值的插件
+ * @param node
+ */
+export function transformExpression(node) {
+  if (node.type === NodeTypes.INTERPOLATION) {
+    processExpression(node.content);
+  }
+}
+
+function processExpression(node) {
+  node.content = `_ctx.${node.content}`;
+  return node;
+}
+```
+
+然后在转换代码阶段传入第二个参数 option 的属性 nodeTransforms
+
+```ts
+it("interpolation", () => {
+  const ast = baseParse("{{message}}");
+  transform(ast, {
+    nodeTransforms: [transformExpression],
+  });
+  const { code } = generate(ast);
+
+  expect(code).toMatchSnapshot();
+});
+```
+
+这样 transform 阶段就会处理插值类型的节点
+
+还有一个重构点呢是这个`toDisplayString`
+
+```ts
+export const TO_DISPLAY_STRING = Symbol("toDisplayString");
+export const helperMapName = {
+  [TO_DISPLAY_STRING]: "toDisplayString",
+};
+```
+
+抽离出来, 未来如果更多的方法都写在这里
+
+然后将`codegen` 和 `transform` 里面的`toDisplayString`改下即可
+
+抽离后, 保证每个 ts 的职责都是处理当前的任务
+
+- parse 解析生成 ast
+- transform 转换生成 ast 并带一些属性辅助 codegen
+- codegen 生成 render 函数
