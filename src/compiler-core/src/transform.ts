@@ -19,7 +19,7 @@ function traverseNodes(node: any, context) {
   const { nodeTransforms } = context;
   // 对节点进行用户自义定插件处理
   nodeTransforms.forEach((transform) => {
-    transform(node);
+    transform(node, context);
   });
   // 处理不同类型
   switch (node.type) {

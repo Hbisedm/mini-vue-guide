@@ -4713,3 +4713,53 @@ export const helperMapName = {
 - parse 解析生成 ast
 - transform 转换生成 ast 并带一些属性辅助 codegen
 - codegen 生成 render 函数
+
+## 处理 Element 类型生成 render 函数
+
+```ts
+exports[`codegen element 1`] = `
+"const { createElementVNode: _createElementVNode } from Vue
+return function render(_ctx,_cache){return _createElementVNode('div')}"
+`;
+```
+
+```ts
+it("element", () => {
+  const ast = baseParse("<div></div>");
+  transform(ast, {
+    nodeTransforms: [transformElement],
+  });
+  const { code } = generate(ast);
+  expect(code).toMatchSnapshot();
+});
+```
+
+和插值一样
+
+- 处理导入语句
+- 处理`_createElementVNode`
+
+transformElement 中处理导入语句
+
+```ts
+import { CREATE_ELEMENT_VNODE } from "./../runtimeHelpers";
+import { NodeTypes } from "../ast";
+
+export function transformElement(node, context) {
+  if (node.type === NodeTypes.ELEMENT) {
+    context.helper(CREATE_ELEMENT_VNODE);
+  }
+}
+```
+
+`genNode` 加入 Element 类型的处理
+
+```ts
+function genElement(node: any, context: any) {
+  const { push, helper } = context;
+  const { tag } = node;
+  push(`${helper(CREATE_ELEMENT_VNODE)}('${tag}')`);
+}
+```
+
+生成`helper`函数 执行生成 `_createElementVNode`
