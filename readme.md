@@ -5081,3 +5081,183 @@ function genNodeList(nodes, context) {
 }
 ```
 
+## last task: 实现编译 template 成 render 函数
+
+App.ts
+
+```ts
+import { ref } from "../../lib/mini-vue.esm.js";
+export const App = {
+  name: "App",
+  template: "<div>hi,{{count}}{{message}}</div>",
+  setup() {
+    const count = (window.count = ref(1));
+    return {
+      message: "hello-mini",
+      count,
+    };
+  },
+};
+```
+
+这里不传递 render，直接处理 template
+
+```ini
+
+                                    +---------------------+
+                                    |                     |
+                                    |  @vue/compiler-sfc  |
+                                    |                     |
+                                    +-----+--------+------+
+                                          |        |
+                                          v        v
+                      +---------------------+    +----------------------+
+                      |                     |    |                      |
+        +------------>|  @vue/compiler-dom  +--->|  @vue/compiler-core  |
+        |             |                     |    |                      |
+   +----+----+        +---------------------+    +----------------------+
+   |         |
+   |   vue   |
+   |         |
+   +----+----+        +---------------------+    +----------------------+    +-------------------+
+        |             |                     |    |                      |    |                   |
+        +------------>|  @vue/runtime-dom   +--->|  @vue/runtime-core   +--->|  @vue/reactivity  |
+                      |                     |    |                      |    |                   |
+                      +---------------------+    +----------------------+    +-------------------+
+
+
+```
+
+官方告诉我们
+编译器包不应从运行库导入项，反之亦然。如果需要在编译器端和运行时端之间共享某些内容，则应该将其提取到@vue/Shared 中。
+
+那实现的 mini-vue 也跟着他说的做
+
+在`src/index.ts`统一出口这里做传递 compile 函数的逻辑处理
+
+```ts
+// 入口
+export * from "./runtime-dom";
+export * from "./reactivity";
+
+import { registerRuntimeCompiler } from "./runtime-dom";
+import { baseCompile } from "./compiler-core/src";
+import * as runtimeDom from "./runtime-dom";
+
+function compileToFunction(template) {
+  // code => function 代码的字符串
+  const { code } = baseCompile(template);
+  // function代码字符串 => function
+  const render = new Function("Vue", code)(runtimeDom);
+  // 返回render函数
+  return render;
+}
+
+// 使用闭包的形式传递到runtime-dom里面
+registerRuntimeCompiler(compileToFunction);
+```
+
+runtime-core 的`component.ts`中之前处理的 render 逻辑在`finishComponentSetup`里面
+将传递过来的 `compileToFunction`缓存到`compiler`
+
+```ts
+let compiler;
+
+export function registerRuntimeCompiler(_compiler) {
+  compiler = _compiler;
+}
+function finishComponentSetup(instance: any) {
+  const Component = instance.type;
+  // template ==> render函数
+  if (compiler && !Component.render) {
+    if (Component.template) {
+      // 这里就使用编译模块了
+      Component.render = compiler(Component.template);
+    }
+  }
+  /** 将组件的render函数 赋值给 组件实例 */
+  instance.render = Component.render;
+}
+```
+
+这是生成后的代码
+
+```js
+const {
+  toDisplayString: _toDisplayString,
+  createElementVNode: _createElementVNode,
+} = Vue;
+return function render(_ctx, _cache) {
+  return _createElementVNode(
+    "div",
+    null,
+    "hi," + _toDisplayString(_ctx.message)
+  );
+};
+```
+
+- `toDisplayString` 和 `createElementVNode` 是什么玩意
+- 可以看到,我们没有`_ctx`对象, 前面实现的时候都是用`this`去处理的
+
+toDisplayString: 用于处理插值类型的 使用 String 处理即可
+
+```ts
+export function toDisplayString(value) {
+  return String(value);
+}
+```
+
+`createElementVNode`: 处理 Element 类型, 就是生成虚拟 Node, 将`runtime-core/vnode.ts#createVNode` 换个名称导出来即可
+
+```ts
+export { createVNode as createElementVNode };
+```
+
+`_ctx`: 前面使用 this,那将处理的 render 函数的第一个参数也就是`_ctx`传入`proxy`即可
+
+```ts
+instance.update = effect(
+  () => {
+    // 第一次进来时(init)，这个isMounted为false
+    if (!instance.isMounted) {
+      const { proxy } = instance;
+      /** 让instance的代理去执行组件的定义的render函数 返回的是一个subTree虚拟节点 */
+      const subTree = (instance.subTree = instance.render.call(proxy, proxy));
+      /** 调用patch方法挂载这个虚拟节点树 */
+      patch(null, subTree, container, instance, anchor);
+      /** 挂载后 subTree树会带有个el真实节点的属性 */
+      /** 组件对应的根element元素遍历后赋予真实$el */
+      initialVNode.el = subTree.el;
+      instance.isMounted = true;
+    } else {
+      console.log("update");
+      /** update component VNode */
+      const { next, vnode } = instance;
+      /** next不为空 说明可以更新组件 */
+      if (next) {
+        next.el = vnode.el;
+        updateComponentPreRender(instance, next);
+      }
+
+      const { proxy } = instance;
+      const subTree = instance.render.call(proxy, proxy);
+      const prevSubTree = instance.subTree;
+      instance.subTree = subTree;
+      console.log("curr", subTree);
+      console.log("prev", prevSubTree);
+      patch(prevSubTree, subTree, container, instance, anchor);
+      /** 组件对应的根element元素遍历后赋予真实$el */
+    }
+  },
+  {
+    scheduler() {
+      console.log("update - scheduler");
+      queueJobs(instance.update);
+    },
+  }
+);
+```
+
+实现完毕 mini-vue
+
+后续整理输出文档

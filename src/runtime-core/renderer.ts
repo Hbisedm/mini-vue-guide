@@ -477,7 +477,10 @@ export function createRenderer(options) {
         if (!instance.isMounted) {
           const { proxy } = instance;
           /** 让instance的代理去执行组件的定义的render函数 返回的是一个subTree虚拟节点 */
-          const subTree = (instance.subTree = instance.render.call(proxy));
+          const subTree = (instance.subTree = instance.render.call(
+            proxy,
+            proxy
+          ));
           /** 调用patch方法挂载这个虚拟节点树 */
           patch(null, subTree, container, instance, anchor);
           /** 挂载后 subTree树会带有个el真实节点的属性 */
@@ -495,7 +498,7 @@ export function createRenderer(options) {
           }
 
           const { proxy } = instance;
-          const subTree = instance.render.call(proxy);
+          const subTree = instance.render.call(proxy, proxy);
           const prevSubTree = instance.subTree;
           instance.subTree = subTree;
           console.log("curr", subTree);

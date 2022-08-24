@@ -37,7 +37,7 @@ function getFunctionPreamble(ast: any, context: any) {
   const aliasHelper = (s) => `${helperMapName[s]}: _${helperMapName[s]}`;
   if (ast.helpers.length > 0) {
     push(
-      `const { ${ast.helpers.map(aliasHelper).join(", ")} } from ${VueBinding}`
+      `const { ${ast.helpers.map(aliasHelper).join(", ")} } = ${VueBinding}`
     );
   }
   push("\n");
