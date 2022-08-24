@@ -12,15 +12,23 @@ export function transform(root, options = {}) {
 }
 
 function genCode(root) {
-  root.codegenNode = root.children[0];
+  const child = root.children[0];
+  if (child.type === NodeTypes.ELEMENT) {
+    root.codegenNode = child.codegenNode;
+  } else {
+    root.codegenNode = root.children[0];
+  }
 }
 
 function traverseNodes(node: any, context) {
   const { nodeTransforms } = context;
   // 对节点进行用户自义定插件处理
+  const exitFns: any = [];
   nodeTransforms.forEach((transform) => {
-    transform(node, context);
+    const onExit = transform(node, context);
+    if (onExit) exitFns.push(onExit);
   });
+
   // 处理不同类型
   switch (node.type) {
     case NodeTypes.INTERPOLATION:
@@ -32,6 +40,11 @@ function traverseNodes(node: any, context) {
       break;
     default:
       break;
+  }
+  let i = exitFns.length;
+  //倒序执行
+  while (i--) {
+    exitFns[i]();
   }
 }
 function traverseChildren(root: any, context: any) {

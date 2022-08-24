@@ -4737,7 +4737,7 @@ it("element", () => {
 和插值一样
 
 - 处理导入语句
-- 处理`_createElementVNode`
+- 处理`_createElementVNode` 函数
 
 transformElement 中处理导入语句
 
@@ -4763,3 +4763,321 @@ function genElement(node: any, context: any) {
 ```
 
 生成`helper`函数 执行生成 `_createElementVNode`
+
+## 生成联合三种类型的 render 函数
+
+目标生成这个
+
+```ts
+"const { createElementVNode: _createElementVNode, toDisplayString: _toDisplayString } from Vue
+return function render(_ctx,_cache){return _createElementVNode('div'), null, \\"hi, \\" + _toDisplayString(_ctx.message)}"
+`;
+```
+
+前面已经分开实现了三种, 那么联合在一起的话，又回遇到哪些问题呢
+
+```ts
+it("union 3 type", () => {
+  const ast = baseParse("<div>hi,{{message}}</div>");
+  transform(ast, {
+    nodeTransforms: [transformElement],
+  });
+  const { code } = generate(ast);
+  expect(code).toMatchSnapshot();
+});
+```
+
+1. 修改`codegen`处理 Element 类型的逻辑, 因为生成的函数东西都是来自 Element 类型的 children 的节点(暂时 prop 先不做处理)
+
+```ts
+function genElement(node: any, context: any) {
+  const { push, helper } = context;
+  const { tag, children } = node;
+  push(`${helper(CREATE_ELEMENT_VNODE)}('${tag}'), null`);
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    genNode(child, context);
+  }
+}
+```
+
+```ts
+- return function render(_ctx,_cache){return _createElementVNode('div'), null, "hi, " + _toDisplayString(_ctx.message)}
++ return function render(_ctx,_cache){return _createElementVNode('div'), null'hi,'_toDisplayString(message)}
+
+```
+
+- message 前面少了`_ctx`
+- text 类型和插值类型直接多了个`+`
+
+这个`+`符号如何得到呢
+设计一个新的节点类型(复合类型) => 里面包含 Text 和插值 这 2 个类型
+
+新建一个`transformText` 目的是为了将当前遍历的节点为 Element 节点，去处理它的子节点转成复合类型的节点
+
+```ts
+import { NodeTypes } from "../ast";
+
+export function transformText(node) {
+  /**
+   * 判断当前节点是不是Text类型or插值类型
+   * @param node
+   * @returns
+   */
+  function isText(node) {
+    return (
+      node.type === NodeTypes.TEXT || node.type === NodeTypes.INTERPOLATION
+    );
+  }
+
+  if (node.type === NodeTypes.ELEMENT) {
+    let currentContainer;
+    const { children } = node;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      // 如果是的话， 进行 `+`的操作
+      if (isText(child)) {
+        for (let j = i + 1; j < children.length; j++) {
+          const next = children[j];
+          if (isText(next)) {
+            // init
+            if (!currentContainer) {
+              // 更新 Text or插值为复合类型
+              currentContainer = children[i] = {
+                type: NodeTypes.COMPOUND_EXPRESSION,
+                children: [child],
+              };
+            }
+            currentContainer.children.push(" + ");
+            currentContainer.children.push(next);
+            children.splice(j, 1);
+            j--;
+          } else {
+            currentContainer = undefined;
+            break;
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+经过 transform 后 到了 codegen 阶段 就可以判断 node.type 是不是复合类型
+
+因为复合类型的 children 长这样 `[Node, ' + ', Node]` Node 可能是 text 或者 插值
+所以对 string`+`进行 push 处理，其他的还是走统一入口`gencode()`
+
+```ts
+function genCompoundExpression(node, context) {
+  const { push } = context;
+  const { children } = node;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    if (isString(child)) {
+      push(child);
+    } else {
+      genNode(child, context);
+    }
+  }
+}
+```
+
+而处理复合类型 其实就是处理 Element 的 children[0]这个 node
+
+```ts
+function genElement(node: any, context: any) {
+  const { push, helper } = context;
+  const { tag, children } = node;
+  push(`${helper(CREATE_ELEMENT_VNODE)}('${tag}', null, `);
+  // for (let i = 0; i < children.length; i++) {
+  //   const child = children[i];
+  //   genNode(child, context);
+  // }
+  // =>
+  const child = children[0];
+  genNode(child, context);
+  push(")");
+}
+```
+
+但是呢， 这里的 children[0]不应该出现在`codegen.ts`里面(职责划分)
+
+将这个逻辑 抽离到`transformElement`
+
+```ts
+export function transformElement(node, context) {
+  if (node.type === NodeTypes.ELEMENT) {
+    context.helper(CREATE_ELEMENT_VNODE);
+    //中间处理层
+
+    // tag
+    const vnodeTag = node.tag;
+
+    // props
+    let vnodeProps;
+
+    const { children } = node;
+    const vnodeChildren = children[0];
+
+    const vnodeElement = {
+      type: NodeTypes.ELEMENT,
+      tag: vnodeTag,
+      props: vnodeProps,
+      children: vnodeChildren,
+    };
+
+    node.codegenNode = vnodeElement;
+  }
+}
+```
+
+通过 node.codegenNode 传递处理好了的 Element
+
+然后再`transform.ts#genCode`中 处理这个 node
+
+```ts
+function genCode(root) {
+  const child = root.children[0];
+  if (child.type === NodeTypes.ELEMENT) {
+    root.codegenNode = child.codegenNode;
+  } else {
+    root.codegenNode = root.children[0];
+  }
+}
+```
+
+然后加入这个插件
+
+```ts
+transform(ast, {
+  nodeTransforms: [transformText, transformElement],
+});
+```
+
+需要换下位置, 因为 transfromText 先对 Element 的 children 处理后，在处理 Element 类型的 codegenNode
+
+```ts
+const vnodeChildren = children[0];
+const vnodeElement = {
+  type: NodeTypes.ELEMENT,
+  tag: vnodeTag,
+  props: vnodeProps,
+  children: vnodeChildren,
+};
+```
+
+这样的话 `codeGen#genElement` 过程中
+
+就不需要使用`const child = children[0];`
+
+```ts
+function genElement(node: any, context: any) {
+  const { push, helper } = context;
+  const { tag, children } = node;
+  push(`${helper(CREATE_ELEMENT_VNODE)}('${tag}', null, `);
+  // for (let i = 0; i < children.length; i++) {
+  //   const child = children[i];
+  //   genNode(child, context);
+  // }
+  // =>
+  // const child = children[0];
+  genNode(children, context);
+  push(")");
+}
+```
+
+```ts
+
+    - return function render(_ctx,_cache){return _createElementVNode('div', null, "hi, " + _toDisplayString(_ctx.message))}
+    + return function render(_ctx,_cache){return _createElementVNode('div', null, 'hi,' + _toDisplayString(message))}
+```
+
+现在生成的代码中，还没有`_ctx.`
+可以加入之前写的插件`transformExpression`即可
+
+```ts
+transform(ast, {
+  nodeTransforms: [transformExpression, transformText, transformElement],
+});
+```
+
+但是呢, 单侧执行后, 还是和之前一样, 说明这个插件没有使用到，分析一下
+
+transform 遍历 plugin 过程中, 它的结构在`transformText`的时候发生的改变
+
+所以需要将里面的插件的执行顺序进行干预处理
+
+将`transformElement` 和 `transformText`使用闭包的封装起来, 然后修改`transform#traverseNodes`这个逻辑
+
+```ts
+function traverseNodes(node: any, context) {
+  const { nodeTransforms } = context;
+  // 对节点进行用户自义定插件处理
+  const exitFns: any = [];
+  nodeTransforms.forEach((transform) => {
+    const onExit = transform(node, context);
+    if (onExit) exitFns.push(onExit);
+  });
+
+  // 处理不同类型
+  switch (node.type) {
+    case NodeTypes.INTERPOLATION:
+      context.helper(TO_DISPLAY_STRING);
+      break;
+    case NodeTypes.ROOT:
+    case NodeTypes.ELEMENT:
+      traverseChildren(node, context);
+      break;
+    default:
+      break;
+  }
+  let i = exitFns.length;
+  //倒序执行
+  while (i--) {
+    exitFns[i]();
+  }
+}
+```
+
+最后的倒序执行比较有意思,`i--` 先判断后计算 所以可以倒序执行, 要是换成`--i`就少执行里面的第 0 个了
+
+由于倒序,
+
+```ts
+transform(ast, {
+  nodeTransforms: [transformExpression, transformElement, transformText],
+});
+```
+
+`transformElement, transformText` 换成这样的顺序才会正确处理里面的节点类型
+
+其他的就是一些简单的重构了
+
+对于 Element 类型的处理, 它有`tag` `props` `children`
+将这些抽到一个统一处理判空
+
+然后丢到一个统一入口处理`genNodeList`这些属性
+
+```ts
+function genNullable(args: any) {
+  // Implement
+  return args.map((arg) => arg || "null");
+}
+function genNodeList(nodes, context) {
+  // Implement
+  const { push } = context;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (isString(node)) {
+      push(node);
+    } else {
+      genNode(node, context);
+    }
+    if (i < nodes.length - 1) {
+      push(", ");
+    }
+  }
+}
+```
+

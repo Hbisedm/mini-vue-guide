@@ -14,3 +14,8 @@ exports[`codegen string 1`] = `
 "
 return function render(_ctx,_cache){return 'hi'}"
 `;
+
+exports[`codegen union 3 type 1`] = `
+"const { toDisplayString: _toDisplayString, createElementVNode: _createElementVNode } from Vue
+return function render(_ctx,_cache){return _createElementVNode(\\"div\\", null, 'hi,' + _toDisplayString(_ctx.message))}"
+`;
